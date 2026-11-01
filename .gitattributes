@@ -1,0 +1,2 @@
+# Preserve bytes exactly (some extension sources ship CRLF deliberately).
+* -text
