@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Tencent AI Detect",
+  "version": "1.1.1",
+  "description": "Browser extension for Tencent AI Detect.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "activeTab",
+    "notifications",
+    "contextMenus",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://matrix.tencent.com/ai-detect/*",
+    "https://matrix.tencent.com/*",
+    "https://captcha.gtimg.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://matrix.tencent.com/ai-detect/*",
+        "https://matrix.tencent.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "Open Tencent AI Detect",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}

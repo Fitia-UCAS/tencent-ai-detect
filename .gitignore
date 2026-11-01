@@ -1,0 +1,20 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Logs and local artifacts
+*.log
+test-results/
+playwright-report/
+.playwright-profiles/
+
+# Packaging output
+release/
+*.zip
+*.crx
+*.pem
+
+# Dependencies
+node_modules/

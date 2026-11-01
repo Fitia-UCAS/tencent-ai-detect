@@ -1,0 +1,9 @@
+{
+  "name": "tencent-ai-detect",
+  "version": "1.1.1",
+  "private": true,
+  "description": "Browser extension for Tencent AI Detect",
+  "scripts": {
+    "probe": "node scripts/probe-ws.mjs"
+  }
+}
