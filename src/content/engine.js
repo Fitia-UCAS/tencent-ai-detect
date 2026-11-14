@@ -222,7 +222,19 @@
                 return;
             }
 
-            if (!ZQ.state.enabled || ZQ.state.rotating) return;
+            if (!ZQ.state.enabled || !ZQ.state.autoRefresh || ZQ.state.rotating) return;
+
+            // The address limit is checked here, not only after a click. Detecting the detect button
+            // by its text is best-effort - a variant that does not say "检测" and whose class carries
+            // neither "detect" nor "check" leaves the count rising with nothing watching it. The fifth
+            // handshake is then refused and the page shows "Invalid request", which no rotation can
+            // undo because that address is already spent. Reading the stored count makes the trigger
+            // exact no matter how the detection was started.
+            if (ZQ.identityUses() >= ZQ.USES_PER_IDENTITY) {
+                ZQ.rotate('identity-exhausted');
+                return;
+            }
+
             if (ZQ.pageState() !== 'quota') return;
 
             ZQ.handlePageState('watchdog');
