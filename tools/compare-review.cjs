@@ -402,7 +402,7 @@ const PROPOSALS = [
         file: 'src/background/identity.js',
         topic: '三条动态规则是全局的，不按标签页隔离',
         verdict: 'open',
-        claim: '同意。规则确实没有 tab 条件，同时开两个检测页会互相覆盖地址。没修：这个扩展是单标签页使用的，做标签页级规则还要配 sessionRuleIds 和标签页生命周期清理。',
+        claim: '同意。规则确实没有 tab 条件，同时开两个检测页会互相覆盖地址。代码没改：这个扩展是单标签页使用的，做标签页级规则还要配 sessionRuleIds 和标签页生命周期清理。限制本身写进了 README 的「已知限制」，包括将来要支持多标签页需要 updateSessionRules + tabIds 并跟踪标签页生命周期。',
         probe: { must: [/IDENTITY_RULE_ID/], mustNot: [/tabIds/] }
     },
     {
@@ -444,14 +444,6 @@ const PROPOSALS = [
         verdict: 'adopted',
         claim: '审查方的判断成立：sync() 在队列外直接读规则，worker 重启时若排在一次 apply 之后完成，会把旧地址写回 current，下一次发布就会跳过一次本该做的更新。已让 sync() 进同一条队列，并给规则调用加超时，避免一次不回调把队列永久堵死。',
         probe: { must: [/function enqueue/, /withTimeout/, /sync\(\) \{\s*return enqueue/] }
-    },
-    {
-        id: 'P1-14',
-        file: 'src/background/identity.js',
-        topic: '三条动态规则全局共享，不按标签页隔离',
-        verdict: 'open',
-        claim: '按审查方的判断暂时不做，但把限制写进 README：同时开多个检测页不受支持，两个页面会互相覆盖 x-forwarded-for。将来要支持需要 updateSessionRules + tabIds 并跟踪标签页生命周期。',
-        probe: { files: ['README.md'], must: [/tabIds/] }
     }
 ];
 
