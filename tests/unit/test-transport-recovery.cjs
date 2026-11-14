@@ -16,7 +16,9 @@ const SOURCE = fs.readFileSync(path.join(__dirname, '../../src/content/engine.js
 
 // `relayOk` is what the worker answers to the health probe. `send` records every message so the
 // recovery path can be read from the outside.
-function load({ relayOk = false, enabled = true, alive = true, rotating = false } = {}) {
+function load({ relayOk = false, enabled = true, alive = true, rotating = false, storage } = {}) {
+    // The reload budget lives in localStorage, so a test that spans a reload has to share this map.
+    const store = storage || new Map();
     const sends = [];
     const reports = [];
     const timers = new Map();
@@ -72,6 +74,11 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false 
             }
         },
         document: {},
+        localStorage: {
+            getItem: key => (store.has(key) ? store.get(key) : null),
+            setItem: (key, value) => store.set(key, String(value)),
+            removeItem: key => store.delete(key)
+        },
         location: { reload: () => reloads.push(Date.now()) },
         setTimeout: fn => {
             const id = nextTimer++;
@@ -88,7 +95,25 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false 
     vm.runInNewContext(SOURCE, sandbox, { filename: 'engine.js' });
 
     return {
-        ZQ, sends, reports, timers, reloads, listeners,
+        ZQ, sends, reports, timers, reloads, listeners, storage: store,
+        // What the stored reload budget currently says.
+        stored: () => {
+            const raw = store.get('zqTransportReloads');
+            if (!raw) return 0;
+            try {
+                return Number(JSON.parse(raw).count) || 0;
+            } catch (e) {
+                return 0;
+            }
+        },
+        // Ages the stored record past the window, as a later page load would see it.
+        expireBudget: () => {
+            const raw = store.get('zqTransportReloads');
+            if (!raw) return;
+            const record = JSON.parse(raw);
+            record.at = Date.now() - 120000;
+            store.set('zqTransportReloads', JSON.stringify(record));
+        },
         // Lets the probe's queued callback run without firing the reload timers.
         settle: () => new Promise(resolve => setImmediate(resolve)),
         // The probe answers on a macrotask, and the rotation path probes again, so waiting a tick
@@ -161,6 +186,45 @@ check('a live relay allows exactly one reload, then reports', async () => {
     assert.deepEqual(page.statuses(), ['transport-failed', 'transport-failed']);
     page.fireTimers();
     assert.equal(page.reloads.length, 1, 'the retry is spent for this load');
+});
+
+check('the reload budget survives the reload it is bounding', async () => {
+    // The counter is stored, so a reload cannot reset the budget. Without this, "one reload per
+    // page load" allows one reload per load forever, which is exactly the loop it must prevent.
+    const first = load({ relayOk: true });
+    await first.announce();
+    assert.equal(first.stored(), 1, 'the first reload is recorded outside the page');
+
+    // The page reloads; a brand new instance starts with an empty in-memory flag but the same store.
+    const second = load({ relayOk: true, storage: first.storage });
+    await second.announce();
+
+    assert.equal(second.reloads.length, 0, 'the budget is already spent, so no second reload');
+    assert.deepEqual(second.statuses(), ['transport-failed'], 'the state is still reported');
+});
+
+check('the budget expires so a later failure can still recover', async () => {
+    const first = load({ relayOk: true });
+    await first.announce();
+    first.expireBudget();
+
+    const second = load({ relayOk: true, storage: first.storage });
+    await second.announce();
+    second.fireTimers();
+
+    assert.equal(second.reloads.length, 1, 'a stale failure must not block recovery later');
+});
+
+check('a broken relay keeps reusing the rotation path instead of reloading', async () => {
+    const page = load({ relayOk: false });
+
+    await page.announce();
+    await page.announce();
+    await page.announce();
+
+    assert.equal(page.reloads.length, 0, 'a reload cannot change the address while the relay is down');
+    assert.ok(page.actions().filter(action => action === 'relayEnsure').length >= 3,
+        'each failure asks for the relay again');
 });
 
 check('a disabled switch is left alone', async () => {

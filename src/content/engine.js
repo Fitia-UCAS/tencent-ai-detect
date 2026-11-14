@@ -289,8 +289,40 @@
     // So the recovery is driven from here, and it is bounded on purpose:
     //   * relay offline  -> the rotation path already asks for a reconnect and retries itself,
     //                       then reloads once the relay answers. That path paces itself.
-    //   * relay online   -> the failure was not the relay. Reloading on a timer would then loop,
-    //                       so this is allowed exactly once per page load and then reported.
+    //   * relay online   -> the failure was not the relay. One reload opens a fresh socket; if that
+    //                       socket fails too, reloading again is a loop, and the page would keep
+    //                       throwing itself away without ever detecting anything.
+    //
+    // The budget lives in localStorage, not in memory. A counter reset by the very reload it is
+    // meant to bound would allow one more reload per load, which is not a bound at all.
+    ZQ.TRANSPORT_RELOAD_KEY = 'zqTransportReloads';
+    ZQ.TRANSPORT_RELOAD_LIMIT = 2;
+    ZQ.TRANSPORT_RELOAD_WINDOW_MS = 60000;
+
+    // Returns how many transport reloads already happened inside the window, dropping a stale record.
+    function transportReloads() {
+        let record = null;
+
+        try {
+            record = JSON.parse(localStorage.getItem(ZQ.TRANSPORT_RELOAD_KEY) || 'null');
+        } catch (e) {
+            return 0;
+        }
+
+        if (!record || typeof record.at !== 'number') return 0;
+        if (Date.now() - record.at > ZQ.TRANSPORT_RELOAD_WINDOW_MS) return 0;
+
+        return Number(record.count) || 0;
+    }
+
+    function recordTransportReload(count) {
+        try {
+            localStorage.setItem(ZQ.TRANSPORT_RELOAD_KEY, JSON.stringify({ count, at: Date.now() }));
+        } catch (e) {
+            // Storage blocked: the in-memory flag below still stops a loop within one load.
+        }
+    }
+
     ZQ.state.transportRetried = false;
 
     ZQ.handleTransportFailure = async function () {
@@ -304,13 +336,21 @@
             return;
         }
 
-        if (ZQ.state.transportRetried) {
-            // Already spent this load's one retry. Report it rather than reload again.
+        const spent = Math.max(transportReloads(), ZQ.state.transportRetried ? 1 : 0);
+
+        // Two separate bounds, because they answer different questions:
+        //   * transportRetried - this load already reloaded once; a second failure in the same load
+        //     means the reload did not help.
+        //   * the stored budget - previous loads already spent their reload on the same failure.
+        if (ZQ.state.transportRetried || spent >= ZQ.TRANSPORT_RELOAD_LIMIT) {
+            // The relay answers but its sockets keep failing. That is not something a reload fixes,
+            // so it is reported and left alone instead of reloading forever.
             ZQ.reportState(ZQ.currentState('transport-failed'));
             return;
         }
 
         ZQ.state.transportRetried = true;
+        recordTransportReload(spent + 1);
         ZQ.reportState(ZQ.currentState('transport-failed'));
         ZQ.scheduleRetry(1200);
     };
