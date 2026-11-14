@@ -35,6 +35,47 @@ check('applyHunks reconstructs a valid replacement hunk', () => {
     assert.deepEqual(result.errors, []);
 });
 
+// format-patch output carries a signature and a diffstat after the last hunk of a commit. Those
+// lines start with "-- " and "---", which look exactly like deletions, so a parser that keeps
+// reading past the declared counts absorbs them and then rejects its own hunk. Reading a
+// multi-commit patch is the -p/--stdout form, so this is the shape that matters in practice.
+check('parsePatch stops a hunk once its declared counts are satisfied', () => {
+    const multiCommit = [
+        'diff --git a/sample.txt b/sample.txt',
+        '--- a/sample.txt',
+        '+++ b/sample.txt',
+        '@@ -1,2 +1,2 @@',
+        ' alpha',
+        '-beta',
+        '+beta updated',
+        '-- ',
+        '2.43.0',
+        '',
+        'diff --git a/other.txt b/other.txt',
+        '--- a/other.txt',
+        '+++ b/other.txt',
+        '@@ -1,1 +1,1 @@',
+        '-old',
+        '+new',
+        ''
+    ].join('\n');
+
+    const files = parsePatch(multiCommit);
+    assert.equal(files.length, 2);
+
+    const [first, second] = files;
+    assert.equal(first.hunks.length, 1);
+    assert.deepEqual(first.hunks[0].lines, [' alpha', '-beta', '+beta updated']);
+
+    const result = applyHunks(['alpha', 'beta'], first.hunks);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.drift, 0);
+    assert.deepEqual(result.lines, ['alpha', 'beta updated']);
+
+    assert.equal(second.path, 'other.txt');
+    assert.deepEqual(second.hunks[0].lines, ['-old', '+new']);
+});
+
 check('applyHunks rejects a body whose old-line count differs from the header', () => {
     const [file] = parsePatch(validPatch.replace('@@ -1,2 +1,3 @@', '@@ -1,3 +1,3 @@'));
     const result = applyHunks(['alpha', 'beta', 'omega'], file.hunks);
