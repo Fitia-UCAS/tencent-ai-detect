@@ -21,7 +21,12 @@ const INVALIDATED = 'Extension context invalidated.';
 
 // Unhandled rejections must be counted, not crash the run.
 let unhandled = 0;
-process.on('unhandledRejection', () => { unhandled += 1; });
+process.on('unhandledRejection', error => {
+    unhandled += 1;
+    // Printed, not just counted: a swallowed rejection used to hide a boot failure entirely.
+    const first = error && error.stack ? error.stack.split('\n')[0] : String(error);
+    process.stdout.write('  FAIL  unhandled rejection: ' + first + '\n');
+});
 
 const failures = [];
 const ok = m => process.stdout.write(`  ok    ${m}\n`);
@@ -76,12 +81,22 @@ function boot(options = {}) {
     Array,
     setTimeout,
     clearTimeout,
+    // engine.js arms the watchdog with setInterval. Without it boot() throws, and because the run
+    // is an async IIFE the throw became a swallowed unhandledRejection: zero checks ran, the
+    // process still exited 0, and the suite looked green.
+    setInterval: () => 1,
+    clearInterval: () => {},
     location: { reload() { reloads.push(Date.now()); } },
     window: { __zqDetectInjected: false },
     document: {
       cookie: '',
       body: { innerText: '' },
       documentElement: {},
+      // detection.js probes for the captcha frame by id, auto.js queries the editor and the buttons.
+      // Without these the content scripts threw during boot, so no check below ever ran.
+      getElementById: () => null,
+      querySelector: () => null,
+      querySelectorAll: () => [],
       addEventListener(type, handler) {
         if (type === 'click') clickHandlers.push(handler);
       }
@@ -293,8 +308,15 @@ function boot(options = {}) {
 
   if (failures.length) {
     process.stdout.write(`\n${failures.length} check(s) failed\n`);
-    process.exitCode = 1;
   } else {
     process.stdout.write('\nall checks passed\n');
   }
-})();
+
+  // Exits explicitly. The content scripts keep their own retry chains armed - a silent worker is
+  // retried on RELAY_RETRY_MS for as long as it stays silent - and in the browser a page reload ends
+  // that chain. Here the reload is stubbed, so those timers would outlive the run forever.
+  process.exit(failures.length ? 1 : 0);
+})().catch(error => {
+  process.stdout.write('\n  FAIL  the run threw before finishing: ' + (error && error.message) + '\n');
+  process.exit(1);
+});
