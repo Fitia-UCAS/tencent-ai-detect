@@ -66,6 +66,18 @@ function randomIp() {
     return `${prefix}.${octet()}.${octet()}`;
 }
 
+// The page may name the address to use, so its captcha request and this socket agree. Anything that
+// is not a plain IPv4 literal is ignored rather than trusted: the value is written into an upstream
+// header, and a newline in it would let a caller inject arbitrary headers.
+function isIpv4(value) {
+    if (typeof value !== 'string' || value.length > 15) return false;
+
+    const parts = value.split('.');
+    if (parts.length !== 4) return false;
+
+    return parts.every(part => /^\d{1,3}$/.test(part) && Number(part) >= 0 && Number(part) <= 255);
+}
+
 // Names a client frame by the field it carries, for diagnostics only. The
 // handshake is ordered (fingerprint, captcha ticket, detection text), so knowing
 // which of them a connection has already seen is enough to reason about it.
@@ -398,7 +410,18 @@ server.on('upgrade', (req, socket, head) => {
     const key = req.headers['sec-websocket-key'];
     const connection = String(req.headers.connection || '').toLowerCase().split(',').map(x => x.trim());
     const validKey = typeof key === 'string' && /^[A-Za-z0-9+/]{22}==$/.test(key);
-    if (req.url !== '/ws' || req.headers.origin !== ALLOWED_ORIGIN) {
+
+    // The path may carry the identity the page chose for this load: /ws?xff=1.2.3.4. Accepting it is
+    // what lets the captcha request and this socket carry the same address - the ticket is bound to
+    // the address that fetched it, so a socket on a different one is refused.
+    const url = String(req.url || '');
+    const queryAt = url.indexOf('?');
+    const path = queryAt === -1 ? url : url.slice(0, queryAt);
+    const requestedIp = queryAt === -1
+        ? null
+        : new URLSearchParams(url.slice(queryAt + 1)).get('xff');
+
+    if (path !== '/ws' || req.headers.origin !== ALLOWED_ORIGIN) {
         denyUpgrade(socket);
         return;
     }
@@ -421,11 +444,13 @@ server.on('upgrade', (req, socket, head) => {
 
     socket.setNoDelay(true);
 
-    // A label for this connection. It only becomes the address the server sees when spoofing is
-    // switched on; otherwise the upstream sees the real one and this is used for logs and history.
-    const ip = randomIp();
+    // A label for this connection. It becomes the address the server sees through
+    // X-Forwarded-For; the page picks it per load and passes it on the socket path so its captcha
+    // request can carry the same one.
+    const ip = isIpv4(requestedIp) ? requestedIp : randomIp();
     stats.connections += 1;
     stats.ips.push(ip);
+    stats.currentIp = ip;
 
     // Bound the history so a long-lived relay does not grow without limit.
     if (stats.ips.length > 200) stats.ips.splice(0, stats.ips.length - 200);
@@ -564,7 +589,9 @@ server.on('upgrade', (req, socket, head) => {
     const connectAndServe = () => {
         attempt += 1;
 
-        const ip = attempt === 1 ? stats.ips[stats.ips.length - 1] : randomIp();
+        // A retry keeps the identity the page chose; only the transport is being rebuilt, and a new
+        // address here would invalidate the captcha ticket the page is about to send.
+        const ip = isIpv4(requestedIp) ? requestedIp : stats.ips[stats.ips.length - 1];
         if (attempt > 1) {
             stats.connections += 1;
             stats.ips.push(ip);

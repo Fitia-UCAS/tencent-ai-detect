@@ -93,13 +93,21 @@ function closePayload(code, reason) {
 async function startRelay(env) {
   const port = await freePort();
   const code = source.replace(/^#![^\n]*\n/, '').replace(target, mock);
-  const child = spawn(process.execPath, ['-e', code], {
+
+  // The patched source goes to a file rather than `-e`: the relay is large enough that passing it on
+  // the command line exceeds the Windows limit (ENAMETOOLONG), and that failure has nothing to do
+  // with what this test asserts. The file has to sit beside the relay so its relative requires
+  // still resolve.
+  const scriptPath = path.join(__dirname, `.tmp-relay-close-${process.pid}-${port}.cjs`);
+  fs.writeFileSync(scriptPath, code, 'utf8');
+
+  const child = spawn(process.execPath, [scriptPath], {
     stdio: ['ignore', 'ignore', 'pipe'],
     cwd: __dirname,
     env: { ...process.env, RELAY_PORT: String(port), RELAY_IDLE_MS: '0', ...env }
   });
 
-  const state = { child, port, stderr: '' };
+  const state = { child, port, stderr: '', scriptPath };
   child.stderr.on('data', c => { state.stderr += String(c); });
 
   const deadline = Date.now() + 4000;
@@ -112,6 +120,7 @@ async function startRelay(env) {
   }
 
   child.kill();
+  try { fs.rmSync(state.scriptPath, { force: true }); } catch {}
   throw new Error('relay did not start: ' + state.stderr);
 }
 
@@ -197,6 +206,7 @@ async function stop(state) {
     state.child.kill();
     await sleep(150);
   }
+  try { fs.rmSync(state.scriptPath, { force: true }); } catch {}
 }
 
 (async () => {

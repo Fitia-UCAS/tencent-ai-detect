@@ -10,6 +10,9 @@ test-results/
 playwright-report/
 .playwright-profiles/
 tmp-diag/
+# A relay test writes the patched relay here to stay under the Windows command-line
+# limit; it removes the file itself, but a crashed run must not leave it tracked.
+scripts/.tmp-*
 
 # Packaging output
 release/

@@ -21,6 +21,89 @@
     let rotating = false;
     let retryTimer = null;
 
+    // --- identity ------------------------------------------------------------
+    // The captcha ticket is bound to the address that fetched it. The page fetches its own ticket
+    // over plain HTTPS, so the socket has to carry the same address or the ticket is refused with
+    // "Invalid request". This script therefore picks one address per page load, hands it to the
+    // socket through localStorage (read synchronously by shim.js) and to the background for the
+    // request-header rule. One load is one identity, which is also what rotation needs.
+
+    const IDENTITY_KEY = 'zqXff';
+
+    // Same address ranges the relay draws from, so a chosen identity looks like a normal client.
+    const IDENTITY_PREFIXES = [
+        '112.80', '112.82', '112.51', '112.55', '112.157', '112.214',
+        '116.25', '120.204', '183.192', '221.226', '58.216', '61.147',
+        '180.97', '182.61', '39.156', '223.5', '106.11', '121.40',
+        '118.31', '121.199', '140.205', '47.96', '101.226', '175.6',
+        '222.186', '110.184', '171.88', '125.64', '182.150', '119.147'
+    ];
+
+    function randomIdentity() {
+        const prefix = IDENTITY_PREFIXES[Math.floor(Math.random() * IDENTITY_PREFIXES.length)];
+        const octet = () => 1 + Math.floor(Math.random() * 254);
+        return `${prefix}.${octet()}.${octet()}`;
+    }
+
+    // A page load keeps its identity for as long as it lasts, so the socket and the captcha request
+    // made moments later agree. It is NOT carried over to the next load. Measured against the real
+    // server: one address serves four handshakes and is refused from the fifth onwards, permanently
+    // ({"status":"failed","msg":"Invalid request"}), while a fresh one is accepted every time. The
+    // limit is per address, not per prefix - an untouched neighbour in the same /24 still works.
+    // Restoring a stored value would therefore burn that address and leave the extension unable to
+    // detect anything at all.
+    let loadIdentity = null;
+
+    // Measured, not assumed: see the note above. The reload has to happen before the fifth
+    // handshake, and it must never happen while the user is completing the captcha by hand.
+    const USES_PER_IDENTITY = 4;
+
+    // Bumped by shim.js on every relay socket it opens. Reading the real count is what makes the
+    // reload decision correct: a page load reuses one socket for several detections, so counting
+    // clicks would reload at the wrong moment.
+    const USE_COUNT_KEY = 'zqXffUses';
+
+    function identityUses() {
+        try {
+            const stored = Number(localStorage.getItem(USE_COUNT_KEY));
+            return Number.isFinite(stored) && stored > 0 ? stored : 0;
+        } catch (e) {
+            // Storage blocked: assume no uses, so the page is left alone rather than reloaded
+            // blindly.
+            return 0;
+        }
+    }
+
+    function ensureIdentity() {
+        if (loadIdentity) return loadIdentity;
+
+        loadIdentity = randomIdentity();
+
+        try {
+            localStorage.setItem(IDENTITY_KEY, loadIdentity);
+            // A new address starts with a clean handshake count, so the reload that follows is
+            // governed by this address's own uses.
+            localStorage.setItem(USE_COUNT_KEY, '0');
+        } catch (e) {
+            // Storage can be unavailable on a locked-down profile; the socket then falls back to
+            // whatever the relay picks.
+        }
+
+        return loadIdentity;
+    }
+
+    function publishIdentity(identity) {
+        try {
+            chrome.runtime.sendMessage({ action: 'setIdentity', ip: identity }, () => {
+                // A missing worker is not this script's problem to fix; the rule simply stays as it
+                // was for this load.
+                void chrome.runtime.lastError;
+            });
+        } catch (e) {
+            // Extension context gone; nothing to publish to.
+        }
+    }
+
     function readState() {
         try {
             const raw = localStorage.getItem(STATE_KEY);
@@ -148,6 +231,53 @@
         '请先完成验证'
     ];
 
+    // How soon to look again while the user is completing a challenge. Short enough that the reload
+    // follows the challenge closely, long enough not to spin while it is open.
+    const CAPTCHA_WAIT_MS = 2000;
+
+    // The challenge itself is rendered in an iframe owned by the captcha SDK, so none of its text
+    // reaches document.body.innerText and CAPTCHA_PHRASES above cannot see it. The element is the
+    // only reliable signal. Measured on the live page, the SDK keeps its container in the DOM at
+    // all times and hides it by moving it far off-screen, not by collapsing it:
+    //
+    //   div#tcaptcha_wrapper_transform_dy  offsetWidth 300  rect.y -1000000  opacity 0
+    //   iframe#tcaptcha_iframe_dy          offsetWidth 300  rect.y -1000000
+    //
+    // So size is useless here - it reads as present even with no challenge on screen, which would
+    // block every reload forever. What separates a live challenge is that it is actually inside the
+    // viewport and opaque. The template varies (drag image, pick-the-slowest, pick the matching
+    // item) but the container does not.
+    function captchaOpen() {
+        const element = document.getElementById('tcaptcha_iframe_dy') ||
+            document.getElementById('tcaptcha_iframe') ||
+            document.getElementById('tcaptcha_transform') ||
+            document.getElementById('tcaptcha_wrapper_transform_dy') ||
+            document.querySelector('.tcaptcha-transform');
+
+        if (!element) return false;
+
+        const rect = element.getBoundingClientRect();
+        if (!(rect.width > 0 && rect.height > 0)) return false;
+
+        const viewWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewHeight = window.innerHeight || document.documentElement.clientHeight;
+
+        // Off-screen in any direction means hidden, which is how the SDK parks it.
+        if (rect.bottom <= 0 || rect.right <= 0) return false;
+        if (rect.top >= viewHeight || rect.left >= viewWidth) return false;
+
+        // And it has to be opaque: a container parked transparent, or one still fading in, is not
+        // asking the user anything yet.
+        for (let node = element, depth = 0; node && depth < 8; node = node.parentElement, depth += 1) {
+            const style = window.getComputedStyle(node);
+            if (!style) break;
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+            if (Number(style.opacity) === 0) return false;
+        }
+
+        return true;
+    }
+
     // Neither quota nor captcha: an opaque server refusal. Kept so the caller can
     // report it, but it must not trigger automatic rotation.
     const AMBIGUOUS_PHRASES = [
@@ -256,12 +386,29 @@
         writeState({ backoffUntil: Date.now() + delayMs });
 
         retryTimer = setTimeout(() => {
-            if (contextAlive && autoRefresh) location.reload();
+            if (!contextAlive || !autoRefresh) return;
+
+            // The captcha is the user's to solve, and a reload here would throw their work away
+            // mid-challenge. Wait for it to close instead. Re-checking keeps this from being a
+            // one-shot miss: the reload happens on its own once the challenge is gone.
+            if (captchaOpen()) {
+                scheduleRetry(CAPTCHA_WAIT_MS);
+                return;
+            }
+
+            location.reload();
         }, delayMs);
     }
 
     async function rotate(reason) {
         if (!enabled || rotating) return;
+
+        // A challenge on screen means the page is waiting on the user, not on a new address.
+        // Rotating now would reload mid-challenge and discard their work.
+        if (captchaOpen()) {
+            scheduleRetry(CAPTCHA_WAIT_MS);
+            return;
+        }
 
         const state = readState();
 
@@ -312,8 +459,8 @@
 
         reportState(currentState('rotated'));
 
-        // The reload is what opens a fresh socket, and the relay hands that new
-        // socket a new client address.
+        // The reload is what opens a fresh socket. The reloaded page runs this script again, which
+        // picks a new address, so the reload - not the relay - is what rotates the identity.
         scheduleRetry(1200);
     }
 
@@ -367,8 +514,22 @@
                 className.includes('detect') || className.includes('check')) {
                 sendMessage({ action: 'usageIncrement' });
 
+                loadUses += 1;
+
                 setTimeout(() => {
-                    if (enabled && !rotating) handlePageState('quota-after-click');
+                    if (!enabled || rotating) return;
+
+                    // Measured: an address serves four handshakes and is refused from the fifth
+                    // onwards with "Invalid request". Reloading before that point costs nothing and
+                    // moves the page onto a fresh address, so the user never sees that refusal.
+                    // Deciding on the count rather than on the refusal keeps rotate() off an
+                    // ambiguous message, which is what once caused a reload loop.
+                    if (loadUses >= USES_PER_IDENTITY) {
+                        rotate('identity-exhausted');
+                        return;
+                    }
+
+                    handlePageState('quota-after-click');
                 }, 2500);
             }
         });
@@ -408,6 +569,10 @@
 
     monitorUsage();
     watchResults();
+
+    // Pick this load's identity before anything is sent, and tell the background so it can put the
+    // same address on the page's own captcha request.
+    publishIdentity(ensureIdentity());
 
     // The panel writes autoRefresh to storage; without reading it here the
     // switch would flip in the UI while this script kept reloading anyway.

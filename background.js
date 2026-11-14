@@ -292,7 +292,79 @@
         });
     });
 
+    // Put the page's chosen address on its own requests, so the captcha ticket is issued for the
+    // same address the socket will use. Without this the ticket is bound to the real address while
+    // the socket carries the synthetic one, and the server refuses the detection.
+    //
+    // Only the domains involved in detection and its captcha are touched: the rule is a header
+    // injection, and the narrower it is the less it can disturb.
+    const IDENTITY_RULE_ID = 1;
+    const IDENTITY_DOMAINS = [
+        '||matrix.tencent.com',
+        '||t.captcha.qq.com',
+        '||captcha.gtimg.com'
+    ];
+
+    let identityIp = null;
+
+    function applyIdentity(ip) {
+        if (!ip) return;
+
+        // One rule per domain keeps the conditions simple and the blast radius visible.
+        const rules = IDENTITY_DOMAINS.map((filter, index) => ({
+            id: IDENTITY_RULE_ID + index,
+            priority: 1,
+            action: {
+                type: 'modifyHeaders',
+                requestHeaders: [{
+                    header: 'x-forwarded-for',
+                    operation: 'set',
+                    value: ip
+                }]
+            },
+            condition: {
+                urlFilter: filter,
+                resourceTypes: ['xmlhttprequest', 'websocket', 'sub_frame', 'other']
+            }
+        }));
+
+        try {
+            chrome.declarativeNetRequest.updateDynamicRules({
+                removeRuleIds: rules.map(rule => rule.id),
+                addRules: rules
+            }, () => {
+                // Reading lastError keeps a failed update from surfacing as an unchecked error; the
+                // consequence is only that this load keeps the previous address.
+                const error = chrome.runtime.lastError;
+                if (error) log('identity rule failed: ' + error.message, 'error');
+            });
+        } catch (error) {
+            log('identity rule unavailable: ' + error.message, 'error');
+        }
+    }
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        // The address this page load chose. The content script publishes it before sending anything,
+        // so the rule exists by the time the captcha is requested.
+        if (request.action === 'setIdentity') {
+            const ip = typeof request.ip === 'string' ? request.ip : '';
+
+            if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+                sendResponse({ status: 'ignored' });
+                return false;
+            }
+
+            if (ip !== identityIp) {
+                identityIp = ip;
+                chrome.storage.local.set({ identityIp: ip });
+                applyIdentity(ip);
+                log('identity set: ' + ip);
+            }
+
+            sendResponse({ status: 'success' });
+            return false;
+        }
+
         // The switch. Turning it on starts the relay, turning it off stops it.
         if (request.action === 'setRelay') {
             const enabled = request.enabled !== false;

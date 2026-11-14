@@ -54,6 +54,11 @@
     "diag:close-real": "node scripts/diag-close-real.cjs",
     "log:dump": "node scripts/dump-log.cjs",
     "test:diagnostics-log": "node scripts/test-diagnostics-log.cjs",
-    "test:relay-spoof-policy": "node scripts/test-relay-spoof-policy.cjs"
+    "test:relay-spoof-policy": "node scripts/test-relay-spoof-policy.cjs",
+    "test:identity-consistency": "node scripts/test-identity-consistency.cjs",
+    "test:relay-identity": "node scripts/test-relay-identity.cjs",
+    "test:e2e-identity": "node scripts/e2e-identity.cjs",
+    "test:captcha-guard": "node scripts/test-captcha-guard.cjs",
+    "test:e2e-captcha-guard": "node scripts/e2e-captcha-guard.cjs"
   }
 }
