@@ -45,7 +45,10 @@ function show(payload) {
 
 function startRelay() {
   const env = { ...process.env };
-  if (NO_SPOOF) env.RELAY_NO_SPOOF = '1';
+  // Spoofing is off by default now; this diagnostic keeps its historical meaning by asking for it
+  // explicitly unless the caller opted out.
+  // Spoofing is the default because the identity handshake needs it; this only opts out.
+  if (NO_SPOOF) env.RELAY_SPOOF = '0';
 
   const child = spawn(process.execPath, [path.join(__dirname, 'relay.cjs')], {
     env,
@@ -77,8 +80,8 @@ async function waitForRelay() {
     // The extension must not be running: its worker revives the relay on an
     // alarm and would replace the --no-spoof instance with a spoofing one.
     process.stdout.write(NO_SPOOF
-      ? 'relay mode: NO SPOOF (socket reports the real address)\n'
-      : 'relay mode: spoofing (each connection gets a synthetic address)\n');
+      ? 'relay mode: no spoof (the socket reports the real address, matching the captcha ticket)\n'
+      : 'relay mode: spoofing (synthetic address; only correct when the captcha was fetched through it)\n');
 
     const health = await httpJson(RELAY_PORT, '/health').catch(() => null);
     if (health && health.service === 'zq-local-relay-v1') {

@@ -280,13 +280,18 @@ function openUpstream(ip) {
         socket.once('connect', () => {
             arm(UPGRADE_TIMEOUT_MS, `upgrade timeout from ${HOST}`);
 
-            // Diagnostic only: RELAY_NO_SPOOF=1 sends the connection without a
-            // synthetic client address, so the upstream sees the real one. Used
-            // to tell "the transport is broken" apart from "the captcha ticket
-            // does not match the spoofed address". Off by default.
-            const spoofed = process.env.RELAY_NO_SPOOF === '1'
-                ? ''
-                : `X-Forwarded-For: ${ip}\r\n`;
+            // Measured: with a synthetic address the fingerprint frame is accepted
+            // ({"status":"success","availableUses":5}); sending the real address instead makes the
+            // server refuse the identity outright ({"status":"failed","msg":"Invalid request"}).
+            // Spoofing is therefore required, not optional.
+            //
+            // It still leaves the later detection frames exposed: the captcha ticket is bound to the
+            // address that fetched it, and the page fetches it over plain HTTPS with the real one.
+            // Making the two agree needs the captcha request to carry the same address, which this
+            // relay cannot do on its own - see docs/re-notes.md, where the reference tool sets the
+            // same header on every page request rather than only on the socket.
+            const spoof = process.env.RELAY_SPOOF !== '0';
+            const forwarded = spoof ? `X-Forwarded-For: ${ip}\r\n` : '';
 
             const secure = tls.connect({ socket, servername: HOST }, () => {
                 secure.write(
@@ -297,7 +302,7 @@ function openUpstream(ip) {
                     `Sec-WebSocket-Key: ${key}\r\n` +
                     'Sec-WebSocket-Version: 13\r\n' +
                     `Origin: https://${HOST}\r\n` +
-                    spoofed +
+                    forwarded +
                     'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
                     '(KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36\r\n\r\n'
                 );
@@ -416,6 +421,8 @@ server.on('upgrade', (req, socket, head) => {
 
     socket.setNoDelay(true);
 
+    // A label for this connection. It only becomes the address the server sees when spoofing is
+    // switched on; otherwise the upstream sees the real one and this is used for logs and history.
     const ip = randomIp();
     stats.connections += 1;
     stats.ips.push(ip);
