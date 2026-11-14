@@ -19,18 +19,18 @@ const SOURCES = ['core.js', 'identity.js', 'detection.js', 'engine.js', 'index.j
 }));
 const INVALIDATED = 'Extension context invalidated.';
 
-// Unhandled rejections must be counted, not crash the run.
-let unhandled = 0;
-process.on('unhandledRejection', error => {
-    unhandled += 1;
-    // Printed, not just counted: a swallowed rejection used to hide a boot failure entirely.
-    const first = error && error.stack ? error.stack.split('\n')[0] : String(error);
-    process.stdout.write('  FAIL  unhandled rejection: ' + first + '\n');
-});
-
+// Unexpected rejections must fail the whole test, not merely print FAIL while exiting 0.
+// The previous handler incremented a separate counter but never updated `failures`, so a
+// rejected Promise could produce both a FAIL line and `all checks passed` in one run.
 const failures = [];
 const ok = m => process.stdout.write(`  ok    ${m}\n`);
 const fail = m => { failures.push(m); process.stdout.write(`  FAIL  ${m}\n`); };
+let unhandled = 0;
+process.on('unhandledRejection', error => {
+    unhandled += 1;
+    const first = error && error.stack ? error.stack.split('\n')[0] : String(error);
+    fail('unhandled rejection: ' + first);
+});
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // Builds a VM whose chrome.* surface behaves according to the scenario under
@@ -306,6 +306,9 @@ function boot(options = {}) {
     else fail('SVG click target caused a className.includes exception');
   }
 
+  // Give any Promise rejected by the final synchronous check a turn to surface before
+  // deciding the exit status. Tests are not allowed to print FAIL and still exit zero.
+  await sleep(0);
   if (failures.length) {
     process.stdout.write(`\n${failures.length} check(s) failed\n`);
   } else {

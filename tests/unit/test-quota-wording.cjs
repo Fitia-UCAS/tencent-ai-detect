@@ -38,7 +38,10 @@ function load(bodyText) {
       storage: { local: { get() {}, set() {} }, onChanged: { addListener() {} } }
     },
     MutationObserver: function () { this.observe = () => {}; },
-    setTimeout, clearTimeout, setInterval, clearInterval, console, Date, Promise
+    // Only parsing is under test. Discard background timeouts and intervals, including
+    // identity retries: they are not observed by these assertions and keep Node alive.
+    setTimeout: () => 1, clearTimeout: () => {},
+    setInterval: () => 1, clearInterval: () => {}, console, Date, Promise
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);

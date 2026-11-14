@@ -28,6 +28,7 @@
     "test:relay-pid": "node tests/unit/test-relay-pid.cjs",
     "test:stop-relay-guard": "node tests/unit/test-stop-relay-guard.cjs",
     "test:content-context": "node tests/unit/test-content-context.cjs",
+    "test:runner-integrity": "node tests/unit/test-test-runner-integrity.cjs",
     "diag:frames": "node tools/diagnostics/diag-frames.cjs",
     "diag:detect-manual": "node tools/diagnostics/diag-detect-manual.cjs",
     "test:relay-head-frame": "node tests/integration/test-relay-head-frame.cjs",
