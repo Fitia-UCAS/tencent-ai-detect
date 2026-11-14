@@ -26,10 +26,41 @@
 
     let nativePort = null;
     let relayOnline = false;
+    let lastMirrorAt = 0;
 
-    function log(text) {
-        // Keeps the worker's own diagnostics out of the popup.
-        console.debug('[zq]', text);
+    // Diagnostics go two places: the worker console for live viewing, and a bounded ring buffer in
+    // storage so a failure survives the worker being torn down. A service worker stops whenever it
+    // idles out, which is why console-only logs disappear exactly when they are needed — the
+    // reconnect a minute later has no record of why the host was unreachable before.
+    //
+    // Read it back with `npm run log:dump`, which attaches to the extension over CDP.
+    const LOG_KEY = 'diagnosticsLog';
+    const LOG_CAP = 200;
+
+    function log(text, level = 'info') {
+        console.debug(`[zq] ${level}`, text);
+
+        chrome.storage.local.get([LOG_KEY], result => {
+            const entries = Array.isArray(result[LOG_KEY]) ? result[LOG_KEY] : [];
+            entries.push({ t: Date.now(), level, text });
+            while (entries.length > LOG_CAP) entries.shift();
+            chrome.storage.local.set({ [LOG_KEY]: entries });
+        });
+
+        // Mirror to the host, which appends to a file on disk. Storage is only readable through the
+        // browser, so a disk copy is what makes a failure inspectable from outside it. Guarded and
+        // rate-limited: a logging failure must not turn into a loop, and a relay that floods
+        // errors must not flood the host with messages.
+        if (!nativePort || level !== 'error') return;
+        const now = Date.now();
+        if (now - lastMirrorAt < 1000) return;
+        lastMirrorAt = now;
+
+        try {
+            nativePort.postMessage({ type: 'log', level, text });
+        } catch (error) {
+            // The port died between the check and the send; the ring buffer still has the entry.
+        }
     }
 
     // --- native host -------------------------------------------------------
@@ -40,7 +71,10 @@
         try {
             nativePort = chrome.runtime.connectNative(HOST_NAME);
         } catch (e) {
-            log('connectNative failed: ' + e.message);
+            // Thrown when the host is not registered at all, or its manifest cannot be read. This
+            // is the failure that leaves the extension silently doing nothing, so it must be
+            // recorded rather than only printed.
+            log('connectNative failed: ' + e.message, 'error');
             nativePort = null;
             return null;
         }
@@ -59,7 +93,10 @@
             // Its callback must not clear the new port's live state.
             const error = chrome.runtime.lastError;
             if (nativePort !== connectedPort) return;
-            if (error) log('native disconnected: ' + error.message);
+            // A missing or unreadable host manifest surfaces here, not on connect: the browser
+            // creates the port, then tears it down with lastError set. Losing this message is what
+            // makes a broken registration look like a healthy idle extension.
+            if (error) log('native disconnected: ' + error.message, 'error');
 
             nativePort = null;
             relayOnline = false;
@@ -105,8 +142,12 @@
                 chrome.storage.local.set({ relayOnline: relayOnline });
                 return body || null;
             })
-            .catch(() => {
+            .catch(error => {
                 clearTimeout(timer);
+                // A relay that is down is the second silent failure mode: the port can be
+                // connected while the child process is gone. The reason has to be recorded, or the
+                // only symptom is a panel that says nothing useful.
+                log('relay health failed: ' + (error && error.message ? error.message : 'unreachable'), 'error');
                 relayOnline = false;
                 chrome.storage.local.set({ relayOnline: false });
                 return null;

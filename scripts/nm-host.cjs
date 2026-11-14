@@ -14,7 +14,9 @@
 
 const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
 const path = require('node:path');
 
 const PORT = Number(process.env.RELAY_PORT || 9420);
@@ -47,8 +49,35 @@ process.stdout.on('error', error => {
     shutdown();
 });
 
+// The browser captures a native host's stderr, where it is effectively unreachable: it does not
+// land in any file the user or a script can open. A host failure is exactly what makes the
+// extension look like it does nothing, so the same line is appended to a log file on disk, outside
+// the checkout where no branch switch can touch it.
+const LOG_DIR = path.join(os.homedir(), '.tencent-ai-detect-keys');
+const LOG_FILE = path.join(LOG_DIR, 'host.log');
+const LOG_LIMIT_BYTES = 512 * 1024;
+
+function appendToLogFile(line) {
+    try {
+        fs.mkdirSync(LOG_DIR, { recursive: true });
+
+        // Keep one file bounded instead of letting it grow for the life of the machine.
+        try {
+            if (fs.statSync(LOG_FILE).size > LOG_LIMIT_BYTES) fs.truncateSync(LOG_FILE, 0);
+        } catch (error) {
+            // No file yet: the append below creates it.
+        }
+
+        fs.appendFileSync(LOG_FILE, line + '\n');
+    } catch (error) {
+        // Logging must never be the reason the host stops working.
+    }
+}
+
 function log(text) {
-    process.stderr.write(`[nm-host] ${text}\n`);
+    const line = `[nm-host] ${new Date().toISOString()} ${text}`;
+    process.stderr.write(line + '\n');
+    appendToLogFile(line);
 }
 
 // --- relay supervision -----------------------------------------------------
@@ -178,6 +207,10 @@ async function drain() {
             try {
                 if (message.type === 'ping') {
                     send({ type: 'pong', at: Date.now() });
+                } else if (message.type === 'log') {
+                    // The worker forwards its error lines so they reach a file on disk. Acknowledge
+                    // nothing: this is one-way, and the worker must not wait on it.
+                    log(`worker ${message.level || 'info'}: ${message.text}`);
                 } else if (message.type === 'ensure') {
                     const result = await ensureRelay();
                     send(Object.assign({ type: 'relay' }, result));

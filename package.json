@@ -51,6 +51,8 @@
     "test:relay-fragment": "node scripts/test-relay-fragment.cjs",
     "diag:fragment-real": "node scripts/diag-fragment-real.cjs",
     "test:relay-close-handshake": "node scripts/test-relay-close-handshake.cjs",
-    "diag:close-real": "node scripts/diag-close-real.cjs"
+    "diag:close-real": "node scripts/diag-close-real.cjs",
+    "log:dump": "node scripts/dump-log.cjs",
+    "test:diagnostics-log": "node scripts/test-diagnostics-log.cjs"
   }
 }
