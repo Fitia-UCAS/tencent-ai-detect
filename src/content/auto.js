@@ -102,9 +102,20 @@
         }
     }
 
+    // Compares on the text with all whitespace removed.
+    //
+    // The site's editor normalises line breaks and spacing as it renders, so the text read back
+    // after a reload is rarely byte-identical to what was saved. A strict comparison therefore
+    // treated a restored draft as brand-new text, pressed detect again, and produced a detection
+    // with no captcha ticket - which the server answers with "Invalid request". That is the loop
+    // this normalisation closes.
+    function fingerprint(text) {
+        return String(text || '').replace(/\s+/g, '');
+    }
+
     function rememberDetected(text) {
         try {
-            localStorage.setItem(LAST_DETECTED_KEY, text);
+            localStorage.setItem(LAST_DETECTED_KEY, fingerprint(text));
         } catch (e) {
         }
     }
@@ -119,7 +130,7 @@
 
         const text = ZQ.readEditor();
         if (!text) return false;
-        if (text === lastDetected()) return false;
+        if (fingerprint(text) === lastDetected()) return false;
 
         const button = ZQ.detectButton();
         if (!button || button.disabled) return false;

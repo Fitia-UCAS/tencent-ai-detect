@@ -28,6 +28,28 @@ export function isIpv4(value) {
 
 // Builds the rules for one address. One rule per domain keeps the conditions simple and the blast
 // radius visible.
+//
+// Every resource type except the top-level document is covered. The narrow list this used to carry
+// (xmlhttprequest, websocket, sub_frame, other) silently skipped the captcha SDK's own script and
+// image loads, so those requests left on the real address while the socket carried the synthetic
+// one - and a ticket issued to one address is refused on the other. main_frame is left out on
+// purpose: rewriting the header of the document itself is a much wider change than the detection
+// needs.
+const COVERED_RESOURCE_TYPES = [
+    'sub_frame',
+    'stylesheet',
+    'script',
+    'image',
+    'font',
+    'object',
+    'xmlhttprequest',
+    'ping',
+    'csp_report',
+    'media',
+    'websocket',
+    'other'
+];
+
 export function buildIdentityRules(ip) {
     return IDENTITY_DOMAINS.map((filter, index) => ({
         id: IDENTITY_RULE_ID + index,
@@ -38,7 +60,7 @@ export function buildIdentityRules(ip) {
         },
         condition: {
             urlFilter: filter,
-            resourceTypes: ['xmlhttprequest', 'websocket', 'sub_frame', 'other']
+            resourceTypes: COVERED_RESOURCE_TYPES
         }
     }));
 }

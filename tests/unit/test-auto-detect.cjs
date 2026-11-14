@@ -171,9 +171,33 @@ check('a rotation keeps the text it was triggered by', () => {
   assert.equal(page.ZQ.readEditor(), '轮换前的内容');
 });
 
+// --- the site normalises whitespace, so a restored draft must not look new -----
+
+check('a draft whose spacing changed is not detected again', () => {
+  const page = load({ text: '第一段\n第二段' });
+  page.ZQ.autoDetect();
+  assert.equal(page.clicks.length, 1);
+
+  // The editor re-renders the same content with different whitespace, which is what the site does
+  // after a reload. Re-pressing detect here would fire a detection with no captcha ticket, and the
+  // server answers those with "Invalid request".
+  page.editor.textContent = '第一段  \r\n  第二段';
+  page.ZQ.autoDetect();
+
+  assert.equal(page.clicks.length, 1, 'whitespace alone must not count as new text');
+});
+
+check('genuinely different text is still detected', () => {
+  const page = load({ text: '原来的内容' });
+  page.ZQ.autoDetect();
+  page.editor.textContent = '改过的内容';
+  page.ZQ.autoDetect();
+  assert.equal(page.clicks.length, 2);
+});
+
 if (failures.length) {
-  process.stdout.write(`\nFAIL: ${failures.length} of 10 checks\n`);
+  process.stdout.write(`\nFAIL: ${failures.length} of 12 checks\n`);
   process.exitCode = 1;
 } else {
-  process.stdout.write('\nPASS: 10/10 auto-detect checks\n');
+  process.stdout.write('\nPASS: 12/12 auto-detect checks\n');
 }
