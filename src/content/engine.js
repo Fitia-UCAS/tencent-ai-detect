@@ -300,6 +300,10 @@
     // a blocked, full, or silently-dropped write resets it too. Either way the bound disappears,
     // which is the loop it exists to prevent. Extension storage is the one place the counted page
     // cannot write.
+    //
+    // A reload is the only recovery there is: measured on the live site (tools/diagnostics/
+    // diag-sdk-reconnect.cjs), closing the page's socket leaves it closed - the site's SDK creates
+    // no replacement, and the page does not reload itself. Nothing else reopens it.
     ZQ.TRANSPORT_RELOAD_KEY = 'zqTransportReloads';
     ZQ.TRANSPORT_RELOAD_LIMIT = 2;
     ZQ.TRANSPORT_RELOAD_WINDOW_MS = 60000;
