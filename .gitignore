@@ -13,6 +13,11 @@ tmp-diag/
 # A relay test writes the patched relay here to stay under the Windows command-line
 # limit; it removes the file itself, but a crashed run must not leave it tracked.
 scripts/.tmp-*
+# The native messaging manifest names this checkout by absolute path, so it is per
+# machine. The copy the browser reads lives in ~/.tencent-ai-detect-keys; this one
+# is a leftover from regenerating it in place. Committing it would tie the host
+# registration to whichever branch happens to be checked out.
+host/nm-manifest.local.json
 
 # Packaging output
 release/
