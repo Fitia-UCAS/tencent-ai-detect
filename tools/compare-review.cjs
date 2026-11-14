@@ -199,7 +199,7 @@ function splitLines(text) {
 
 function readAt(commit, file) {
     try {
-        return splitLines(git(['show', commit + ':' + file]));
+        return splitLines(git(['show', commit + ':' + file], { stdio: ['ignore', 'pipe', 'ignore'] }));
     } catch (error) {
         return null;
     }
@@ -459,7 +459,7 @@ function runProbe(proposal, text, fileSet) {
     const probe = proposal.probe || {};
 
     if (probe.files) {
-        const missing = probe.files.filter(file => !fileSet.has(file) && !fs.existsSync(path.join(ROOT, file)));
+        const missing = probe.files.filter(file => !fileSet.has(file));
         return missing.length ? 'missing file(s): ' + missing.join(', ') : null;
     }
 
@@ -474,6 +474,37 @@ function runProbe(proposal, text, fileSet) {
     }
 
     return null;
+}
+
+// A file probe compares two snapshots, not just the current disk. Checking fs.existsSync inside
+// runProbe falsely gave the reviewed patch credit for files added only by our later commits.
+function probeFileSets(proposals, patchFiles, existsAtBase, existsWorking) {
+    const changes = new Map(patchFiles.map(file => [file.path, file]));
+    const referenced = new Set(proposals.flatMap(proposal => (proposal.probe || {}).files || []));
+    const theirs = new Set();
+    const ours = new Set();
+
+    for (const file of referenced) {
+        const change = changes.get(file);
+        if (change ? !change.deleted : existsAtBase(file)) theirs.add(file);
+        if (existsWorking(file)) ours.add(file);
+    }
+
+    return { theirs, ours };
+}
+
+// The unresolved section must come from the same verdicts as the proposal table. Keeping a
+// handwritten list here once made a completed shim fix appear as still open even while all probes
+// passed. New or resolved proposals now update the section without a second manual edit.
+function openIssueLines(proposals) {
+    const open = proposals.filter(proposal => proposal.verdict === 'open');
+    if (!open.length) return ['目前没有标记为“同意但未做”的事项。'];
+
+    return [
+        `当前有 ${open.length} 项标记为“同意但未做”：`,
+        '',
+        ...open.map(proposal => `- ${proposal.id} \`${proposal.file}\`：${proposal.topic}`)
+    ];
 }
 
 // --- the report ---------------------------------------------------------------
@@ -534,6 +565,12 @@ function main() {
 
     const extra = changedByUs.filter(file => !theirs.has(file));
 
+    const { theirs: theirFiles, ours: ourFiles } = probeFileSets(
+        PROPOSALS, patchFiles,
+        file => readAt(base, file) !== null,
+        file => fs.existsSync(path.join(ROOT, file))
+    );
+
     const probeResults = PROPOSALS.map(proposal => {
         // Probes may point at files the patch never touched: the review's findings were spread over
         // the whole worker, while its patch only carried four files.
@@ -549,14 +586,6 @@ function main() {
                 ? theirs.get(proposal.file).lines.join('\n')
                 : readAt(base, proposal.file) ? readAt(base, proposal.file).join('\n') : null);
         const ourText = proposal.probe && proposal.probe.files ? null : workingText(proposal.file);
-
-        const theirFiles = new Set();
-        for (const file of patchFiles) theirFiles.add(file.path);
-        const ourFiles = new Set([...fileSet, ...changedByUs, ...PROPOSALS.map(p => p.file)]);
-
-        for (const file of PROPOSALS.map(p => p.file)) {
-            if (readWorking(file)) ourFiles.add(file);
-        }
 
         return {
             proposal,
@@ -657,10 +686,7 @@ function main() {
 
     md.push('## 五、仍未解决的部分');
     md.push('');
-    md.push('这两条是我同意但没做的，留在这里免得看起来已经完结：');
-    md.push('');
-    md.push('- `src/shim/index.js` 的 `_fallback()` 仍然静默切回原始地址。relay 从未连上和请求被服务端拒绝，在页面上表现完全一样，诊断时会指错层。');
-    md.push('- 三条 DNR 规则是全局的，没有按标签页隔离。同时开两个检测页会互相覆盖地址。');
+    md.push(...openIssueLines(PROPOSALS));
     md.push('');
 
     md.push('## 六、附：每个有分歧的文件的实际差异');
@@ -719,4 +745,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { parsePatch, applyHunks };
+module.exports = { parsePatch, applyHunks, openIssueLines, runProbe, probeFileSets };

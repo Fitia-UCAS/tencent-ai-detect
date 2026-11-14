@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { parsePatch, applyHunks } = require('../../tools/compare-review.cjs');
+const { parsePatch, applyHunks, openIssueLines, runProbe, probeFileSets } = require('../../tools/compare-review.cjs');
 
 const checks = [];
 function check(name, run) {
@@ -107,6 +107,58 @@ check('applyHunks reports ranges extending beyond the base', () => {
 
     assert.ok(result.errors.some(error => error.includes('starts beyond end of base')));
     assert.ok(result.errors.some(error => error.includes('deletion extends beyond end of base')));
+});
+
+check('unresolved section only lists proposals that are actually open', () => {
+    const entries = [
+        { id: 'P1-7', file: 'src/shim/index.js', topic: 'fallback fixed', verdict: 'extended' },
+        { id: 'P1-9', file: 'src/background/identity.js', topic: 'single-tab limitation', verdict: 'open' },
+        { id: 'P1-11', file: 'src/content/auto.js', topic: 'state label fixed', verdict: 'adopted' }
+    ];
+    const lines = openIssueLines(entries).join('\n');
+    assert.match(lines, /当前有 1 项/);
+    assert.match(lines, /P1-9/);
+    assert.doesNotMatch(lines, /P1-7/);
+    assert.doesNotMatch(lines, /P1-11/);
+    assert.doesNotMatch(lines, /fallback fixed/);
+});
+
+check('unresolved section reports none when everything is resolved', () => {
+    assert.deepEqual(openIssueLines([
+        { id: 'P1-7', file: 'src/shim/index.js', topic: 'fixed', verdict: 'extended' }
+    ]), ['目前没有标记为“同意但未做”的事项。']);
+});
+
+check('unresolved section lists all open issues with identifiers', () => {
+    const lines = openIssueLines([
+        { id: 'P1', file: 'a.js', topic: 'first', verdict: 'open' },
+        { id: 'P2', file: 'b.js', topic: 'second', verdict: 'open' }
+    ]).join('\n');
+    assert.match(lines, /当前有 2 项/);
+    assert.match(lines, /P1 `a\.js`：first/);
+    assert.match(lines, /P2 `b\.js`：second/);
+});
+
+check('file probes do not borrow files from the working tree when evaluating the patch', () => {
+    const proposals = [{ id: 'P', file: 'a.js', probe: { files: ['new.js'] } }];
+    const sets = probeFileSets(proposals, [], () => false, file => file === 'new.js');
+    assert.match(runProbe(proposals[0], null, sets.theirs), /missing file\(s\): new\.js/);
+    assert.equal(runProbe(proposals[0], null, sets.ours), null);
+});
+
+check('file probes credit files already present at the base', () => {
+    const proposals = [{ id: 'P', file: 'a.js', probe: { files: ['old.js'] } }];
+    const sets = probeFileSets(proposals, [], file => file === 'old.js', file => file === 'old.js');
+    assert.equal(runProbe(proposals[0], null, sets.theirs), null);
+    assert.equal(runProbe(proposals[0], null, sets.ours), null);
+});
+
+check('file probes credit new patch files but not deleted files', () => {
+    const proposals = [{ id: 'P', file: 'a.js', probe: { files: ['added.js', 'deleted.js'] } }];
+    const patchFiles = [{ path: 'added.js', isNew: true }, { path: 'deleted.js', deleted: true }];
+    const sets = probeFileSets(proposals, patchFiles, () => true, () => false);
+    assert.equal(sets.theirs.has('added.js'), true);
+    assert.equal(sets.theirs.has('deleted.js'), false);
 });
 
 (async () => {
