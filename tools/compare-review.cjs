@@ -107,6 +107,7 @@ function parsePatch(text) {
                 oldStart: Number(header[1]),
                 oldCount: header[2] === undefined ? 1 : Number(header[2]),
                 newStart: Number(header[3]),
+                newCount: header[4] === undefined ? 1 : Number(header[4]),
                 lines: []
             };
             current.hunks.push(hunk);
@@ -128,9 +129,30 @@ function applyHunks(baseLines, hunks) {
     const out = [];
     let cursor = 0;
     let drift = 0;
+    const errors = [];
 
     for (const hunk of hunks) {
-        const start = hunk.oldStart === 0 ? 0 : hunk.oldStart - 1;
+        const oldSeen = hunk.lines.filter(line => line[0] === ' ' || line[0] === '-').length;
+        const newSeen = hunk.lines.filter(line => line[0] === ' ' || line[0] === '+').length;
+
+        if (oldSeen !== hunk.oldCount || newSeen !== hunk.newCount) {
+            errors.push(
+                `hunk -${hunk.oldStart},+${hunk.newStart}: header declares ${hunk.oldCount}/${hunk.newCount} lines, ` +
+                `body contains ${oldSeen}/${newSeen}`
+            );
+        }
+
+        // For a zero-length old range, oldStart is the number of lines before the insertion.
+        // For a non-empty range, unified diff line numbers are one-based.
+        const start = hunk.oldCount === 0 ? hunk.oldStart : Math.max(0, hunk.oldStart - 1);
+
+        if (start < cursor) {
+            errors.push(`hunk -${hunk.oldStart},+${hunk.newStart}: hunks overlap or are out of order`);
+        }
+        if (start > baseLines.length) {
+            errors.push(`hunk -${hunk.oldStart},+${hunk.newStart}: old range starts beyond end of base`);
+        }
+
         while (cursor < start && cursor < baseLines.length) out.push(baseLines[cursor++]);
 
         for (const line of hunk.lines) {
@@ -138,13 +160,22 @@ function applyHunks(baseLines, hunks) {
             const body = line.slice(1);
 
             if (tag === ' ') {
-                if (baseLines[cursor] !== body) drift += 1;
-                out.push(baseLines[cursor]);
-                cursor += 1;
+                if (cursor >= baseLines.length) {
+                    errors.push(`hunk -${hunk.oldStart},+${hunk.newStart}: context extends beyond end of base`);
+                    out.push(body);
+                } else {
+                    if (baseLines[cursor] !== body) drift += 1;
+                    out.push(baseLines[cursor]);
+                    cursor += 1;
+                }
             } else if (tag === '-') {
-                if (baseLines[cursor] !== body) drift += 1;
-                cursor += 1;
-            } else {
+                if (cursor >= baseLines.length) {
+                    errors.push(`hunk -${hunk.oldStart},+${hunk.newStart}: deletion extends beyond end of base`);
+                } else {
+                    if (baseLines[cursor] !== body) drift += 1;
+                    cursor += 1;
+                }
+            } else if (tag === '+') {
                 out.push(body);
             }
         }
@@ -152,7 +183,7 @@ function applyHunks(baseLines, hunks) {
 
     while (cursor < baseLines.length) out.push(baseLines[cursor++]);
 
-    return { lines: out, drift };
+    return { lines: out, drift, errors };
 }
 
 function readAt(commit, file) {
@@ -400,6 +431,7 @@ function main() {
     // Their state: the base content with their hunks replayed onto it.
     const theirs = new Map();
     let drift = 0;
+    const hunkErrors = [];
     for (const file of patchFiles) {
         const baseLines = file.isNew ? [] : readAt(base, file.path);
         if (baseLines === null) {
@@ -408,6 +440,7 @@ function main() {
         }
         const applied = applyHunks(baseLines, file.hunks);
         drift += applied.drift;
+        for (const error of applied.errors) hunkErrors.push(file.path + ': ' + error);
         theirs.set(file.path, { lines: applied.lines, baseLines });
     }
 
@@ -488,7 +521,15 @@ function main() {
     md.push('| 补丁涉及文件 | ' + patchFiles.length + ' |');
     md.push('| 我们还改了、补丁没提的文件 | ' + extra.length + ' |');
     md.push('| hunk 重放时的上下文不匹配行数 | ' + drift + (drift ? '（补丁可能不是切在这个 base 上）' : '（补丁与 base 一致）') + ' |');
+    md.push('| hunk 结构错误 | ' + hunkErrors.length + ' |');
     md.push('');
+
+    if (hunkErrors.length) {
+        md.push('### Hunk 结构校验失败');
+        md.push('');
+        for (const error of hunkErrors) md.push('- ' + error);
+        md.push('');
+    }
 
     md.push('## 一、文件级对比');
     md.push('');
@@ -601,17 +642,22 @@ function main() {
     console.log('proposals ', probeResults.length - failures.length, '/', probeResults.length, 'probes pass');
     console.log('report    ', out);
 
-    if (failures.length) {
+    if (failures.length || hunkErrors.length) {
         for (const result of failures) {
             console.error('  FAIL ' + result.proposal.id + ': ' + result.ourFailure);
         }
+        for (const error of hunkErrors) console.error('  HUNK FAIL ' + error);
         process.exitCode = 1;
     }
 }
 
-try {
-    main();
-} catch (error) {
-    console.error('compare failed: ' + (error && error.message ? error.message : error));
-    process.exitCode = 1;
+if (require.main === module) {
+    try {
+        main();
+    } catch (error) {
+        console.error('compare failed: ' + (error && error.message ? error.message : error));
+        process.exitCode = 1;
+    }
 }
+
+module.exports = { parsePatch, applyHunks };

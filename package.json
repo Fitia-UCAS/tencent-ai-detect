@@ -76,6 +76,7 @@
     "test:identity-rule-lifecycle": "node tests/unit/test-identity-rule-lifecycle.cjs",
     "test:document-start": "node tests/unit/test-document-start.cjs",
     "test:draft-safety": "node tests/unit/test-draft-safety.cjs",
-    "review:compare": "node tools/compare-review.cjs"
+    "review:compare": "node tools/compare-review.cjs",
+    "test:compare-review": "node tests/unit/test-compare-review.cjs"
   }
 }
