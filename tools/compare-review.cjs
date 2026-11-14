@@ -330,8 +330,8 @@ const PROPOSALS = [
         file: 'src/background/identity.js',
         topic: 'apply() 在 updateDynamicRules 完成前就报成功',
         verdict: 'extended',
-        claim: '审查方标了高严重度，但自己的修改建议表里没有这一项。我们补完了：回复现在等到 getDynamicRules() 读回三条规则、逐个核对地址一致才发出，更新操作串行化（慢的早期更新无法覆盖后到的），并用 sync() 在 worker 重启后从浏览器实际持有的规则重建状态。',
-        probe: { must: [/addressFromRules/, /updateDynamicRulesAsync/, /async sync\(\)/] }
+        claim: '审查方标了高严重度，但自己的修改建议表里没有这一项。我们补完了：回复现在等到 getDynamicRules() 读回三条规则、逐个核对地址一致才发出，更新操作串行化（慢的早期更新无法覆盖后到的），并用 sync() 在 worker 重启后从浏览器实际持有的规则重建状态。sync() 后来也进了同一条队列，规则调用另加了超时，避免一次不回调把队列永久堵死。',
+        probe: { must: [/addressFromRules/, /updateDynamicRulesAsync/, /enqueue/, /withTimeout/] }
     },
     {
         id: 'P1-2',
