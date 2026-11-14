@@ -65,7 +65,11 @@ async function waitFor(predicate, attempts = 40, gap = 400) {
                     (owner.profile ? ` (profile ${owner.profile}).` : ' (no --user-data-dir, so a normal browser window).')
                 : '';
             fail(`a relay is already running on ${RELAY_PORT}; stop it first so the test owns the lifecycle.${who}`);
-            note('close that browser or disable the extension in it and re-run: the port is hard-coded, so this test cannot pick another one');
+            // Closing the window is not enough: with the extension enabled and Edge's background
+            // mode on, the worker keeps running, its one-minute keepalive alarm restarts the relay,
+            // and the port stays taken. `npm run stop:relay` frees it only until that alarm fires,
+            // which is far shorter than the wait this suite needs.
+            note('disable this extension in that browser (durable), or quit the browser including its background mode; `npm run stop:relay` only holds until the one-minute keepalive restarts it');
         } else {
             ok('no relay running before the test');
 
