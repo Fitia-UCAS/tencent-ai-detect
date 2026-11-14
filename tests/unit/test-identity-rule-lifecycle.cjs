@@ -9,8 +9,11 @@ const MODULE = pathToFileURL(path.join(__dirname, '../../src/background/identity
 
 // A fake that keeps the dynamic rule list and can be told to fail, lag, or report rules that differ
 // from the ones it was given.
-function fakeChrome({ failUpdate = false, failRead = false, dropRule = false, mutateValue = null, lag = 0 } = {}) {
-    const state = { rules: [], updates: 0, reads: 0, order: [] };
+function fakeChrome({ failUpdate = false, failRead = false, dropRule = false, mutateValue = null, lag = 0, hangUpdate = false, hangRead = false } = {}) {
+    // hangUpdate / hangRead model a browser call that simply never answers - the case where an
+    // await would stay pending forever and take the queue with it. They are mutable so a check can
+    // hang one call and then let the next one through.
+    const state = { rules: [], updates: 0, reads: 0, order: [], hangUpdate, hangRead };
 
     const settle = (fn, value) => {
         if (lag > 0) return new Promise(resolve => setTimeout(() => resolve(fn(value)), lag));
@@ -31,6 +34,9 @@ function fakeChrome({ failUpdate = false, failRead = false, dropRule = false, mu
                     state.updates += 1;
                     state.order.push('update:' + changes.addRules[0].action.requestHeaders[0].value);
 
+                    // Never calls back: the caller must time out rather than wait forever.
+                    if (state.hangUpdate) return;
+
                     if (failUpdate) {
                         this._chrome.runtime.setLastError('rule update refused');
                         callback();
@@ -50,6 +56,9 @@ function fakeChrome({ failUpdate = false, failRead = false, dropRule = false, mu
                 },
                 getDynamicRules(callback) {
                     state.reads += 1;
+                    state.order.push('read');
+
+                    if (state.hangRead) return;
                     if (failRead) {
                         this._chrome.runtime.setLastError('rule read refused');
                         callback([]);
@@ -82,7 +91,9 @@ async function load(options) {
     const fake = fakeChrome(options);
     fake.bind(fake.chrome);
     const mod = await import(MODULE);
-    return { fake, mod, identity: mod.createIdentityRules({ chrome: fake.chrome }) };
+    // The production timeout is 5s; a check that waits that long is not a useful check.
+    const opTimeoutMs = options && options.opTimeoutMs ? options.opTimeoutMs : 40;
+    return { fake, mod, identity: mod.createIdentityRules({ chrome: fake.chrome, opTimeoutMs }) };
 }
 
 // --- the defect this replaces -------------------------------------------------
@@ -136,7 +147,8 @@ check('a second apply waits for the first to finish', async () => {
         identity.apply('112.80.1.3')
     ]);
 
-    assert.deepEqual(fake.state.order, ['update:112.80.1.2', 'update:112.80.1.3'],
+    assert.deepEqual(fake.state.order.filter(step => step.startsWith('update:')),
+        ['update:112.80.1.2', 'update:112.80.1.3'],
         'updates must run in the order they were requested, not interleaved');
     assert.equal(identity.current, '112.80.1.3', 'the last requested address must be the live one');
 });
@@ -229,6 +241,49 @@ check('an unrelated rule is ignored', async () => {
     rules.push({ id: 99, priority: 1, action: { type: 'block' }, condition: {} });
 
     assert.equal(mod.addressFromRules(rules), '112.80.1.2', 'other rules must not break the check');
+});
+
+// --- serialization and liveness ----------------------------------------------
+
+check('sync waits behind a pending apply instead of racing it', async () => {
+    // A worker restart runs sync(); a page publishing at the same moment runs apply(). If sync's
+    // read completes after the apply confirmed the new address, it puts the old one back into
+    // `current` and the next publish skips an update that was actually needed.
+    const { fake, identity } = await load({ lag: 5 });
+
+    const applying = identity.apply('112.80.1.2');
+    const syncing = identity.sync();
+    await Promise.all([applying, syncing]);
+
+    // The ordering is the assertion: unserialized, sync's read runs first, sees the pre-update
+    // rules, and resolves after the apply has already confirmed the new address.
+    assert.deepEqual(fake.state.order, ['update:112.80.1.2', 'read', 'read'],
+        'the sync read must wait for the update it would otherwise race');
+    assert.equal(identity.current, '112.80.1.2',
+        'the address the apply confirmed must survive a sync that started earlier');
+});
+
+check('an apply that never answers fails closed instead of stalling the queue', async () => {
+    const { fake, identity } = await load({ hangUpdate: true });
+
+    const hung = await identity.apply('112.80.1.2');
+    assert.equal(hung, false, 'an unanswered update is unverified, so it is a failure');
+    assert.equal(identity.current, null, 'and it must not be recorded as installed');
+
+    // The queue has to still be usable afterwards, or one stuck call disables every later publish.
+    fake.state.hangUpdate = false;
+    assert.equal(await identity.apply('112.80.1.3'), true, 'a later update must still go through');
+    assert.equal(identity.current, '112.80.1.3');
+});
+
+check('a rule read that never answers does not swallow the next update', async () => {
+    const { fake, identity } = await load({ hangRead: true });
+
+    assert.equal(await identity.sync(), null, 'an unreadable rule set leaves the module empty');
+    assert.equal(identity.current, null);
+
+    fake.state.hangRead = false;
+    assert.equal(await identity.apply('112.80.1.2'), true);
 });
 
 (async () => {

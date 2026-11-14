@@ -130,13 +130,42 @@ export function addressFromRules(rules) {
     return address;
 }
 
-export function createIdentityRules({ chrome, log = () => {} }) {
+// A rule call that never answers would otherwise leave its promise pending forever, and every later
+// update would queue behind it - the extension would stop applying addresses entirely, with no error
+// anywhere. Timing out is a failure, not a success: the address is not confirmed, so `current` is
+// left alone and the caller has to treat the rule as unverified.
+const RULE_OP_TIMEOUT_MS = 5000;
+
+function withTimeout(promise, label, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(label + ' timed out after ' + timeoutMs + 'ms'));
+        }, timeoutMs);
+
+        promise.then(
+            value => { clearTimeout(timer); resolve(value); },
+            error => { clearTimeout(timer); reject(error); }
+        );
+    });
+}
+
+export function createIdentityRules({ chrome, log = () => {}, opTimeoutMs = RULE_OP_TIMEOUT_MS }) {
     // The address last confirmed to be on the live rules. Never written before that confirmation.
     let current = null;
 
-    // Updates run one at a time. Two page loads publishing in quick succession would otherwise race,
-    // and the earlier one can land last, leaving the rules on the address the older load picked.
+    // Rule operations run one at a time, and `sync()` is one of them. Two page loads publishing in
+    // quick succession would otherwise race, and the earlier one can land last, leaving the rules on
+    // the address the older load picked. A sync racing an apply is the same defect from the other
+    // side: its read can finish after the apply confirmed a newer address and put the stale one back
+    // into `current`, so the next publish would skip an update that was actually needed.
     let queue = Promise.resolve();
+
+    function enqueue(run) {
+        const result = queue.then(run, run);
+        // The queue itself must never reject, or every later operation inherits the failure.
+        queue = result.then(() => {}, () => {});
+        return result;
+    }
 
     const identity = {
         // The address the rules were confirmed to carry, so the caller can skip a redundant update.
@@ -148,16 +177,19 @@ export function createIdentityRules({ chrome, log = () => {} }) {
         // type would make the synchronous refusals look like an unverified success.
         apply(ip) {
             if (!isIpv4(ip)) return Promise.resolve(false);
-            if (ip === current) return Promise.resolve(true);
 
-            const run = async () => {
+            return enqueue(async () => {
+                // Re-read the field inside the queued step: a sync or an earlier apply may have
+                // changed it while this one was waiting its turn.
+                if (ip === current) return true;
+
                 const rules = buildIdentityRules(ip);
 
                 try {
-                    await updateDynamicRulesAsync(chrome, {
+                    await withTimeout(updateDynamicRulesAsync(chrome, {
                         removeRuleIds: rules.map(rule => rule.id),
                         addRules: rules
-                    });
+                    }), 'identity rule update', opTimeoutMs);
                 } catch (error) {
                     // Nothing is rolled back: an update is atomic, so the previous set is still live
                     // and `current` still describes it.
@@ -167,7 +199,8 @@ export function createIdentityRules({ chrome, log = () => {} }) {
 
                 let installed = null;
                 try {
-                    installed = addressFromRules(await readDynamicRulesAsync(chrome));
+                    installed = addressFromRules(await withTimeout(
+                        readDynamicRulesAsync(chrome), 'identity rule read', opTimeoutMs));
                 } catch (error) {
                     log('identity rule unreadable: ' + (error.message || error));
                     return false;
@@ -180,12 +213,7 @@ export function createIdentityRules({ chrome, log = () => {} }) {
 
                 current = ip;
                 return true;
-            };
-
-            const result = queue.then(run, run);
-            // The queue itself must never reject, or every later update inherits the failure.
-            queue = result.then(() => {}, () => {});
-            return result;
+            });
         },
 
         // Rebuilds `current` from the rules the browser actually holds.
@@ -193,15 +221,18 @@ export function createIdentityRules({ chrome, log = () => {} }) {
         // A service worker restart erases this module's memory but not the persisted rules, so the
         // field would otherwise claim the rules carry nothing while they still carry the last
         // address - and the first load after the restart would skip a needed update.
-        async sync() {
-            try {
-                current = addressFromRules(await readDynamicRulesAsync(chrome));
-            } catch (error) {
-                log('identity rule unreadable: ' + (error.message || error));
-                current = null;
-            }
+        sync() {
+            return enqueue(async () => {
+                try {
+                    current = addressFromRules(await withTimeout(
+                        readDynamicRulesAsync(chrome), 'identity rule read', opTimeoutMs));
+                } catch (error) {
+                    log('identity rule unreadable: ' + (error.message || error));
+                    current = null;
+                }
 
-            return current;
+                return current;
+            });
         }
     };
 
