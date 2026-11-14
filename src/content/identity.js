@@ -86,8 +86,35 @@
         }
     };
 
-    ZQ.publishIdentity = function (identity) {
-        if (!identity) return;
-        ZQ.send({ action: 'setIdentity', ip: identity });
+    // Whether the background confirmed that the header rule carries this load's address.
+    //
+    //   null   no answer yet (the rule may still be installing)
+    //   true   the background read the rules back and they carry this address
+    //   false  the rule was refused, so the ticket would be issued for the real address while the
+    //          socket carries the synthetic one
+    ZQ.state.identityConfirmed = null;
+
+    ZQ.publishIdentity = function (identity, attempt) {
+        if (!identity) return Promise.resolve(null);
+
+        const tries = attempt || 1;
+
+        return ZQ.send({ action: 'setIdentity', ip: identity }).then(response => {
+            if (response && response.status === 'success') {
+                ZQ.state.identityConfirmed = true;
+                return response;
+            }
+
+            // One retry: the worker is often still starting when a page publishes this early, and a
+            // lost race there would look exactly like a refused rule from here.
+            if (tries < 2) {
+                return new Promise(resolve => {
+                    setTimeout(() => resolve(ZQ.publishIdentity(identity, tries + 1)), 300);
+                });
+            }
+
+            ZQ.state.identityConfirmed = false;
+            return response;
+        });
     };
 })();

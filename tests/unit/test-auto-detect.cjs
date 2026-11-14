@@ -195,9 +195,97 @@ check('genuinely different text is still detected', () => {
   assert.equal(page.clicks.length, 2);
 });
 
+// --- what the press is recorded as ------------------------------------------
+//
+// A click is not a completed detection. The record says what was actually observed, and none of the
+// observed states allows an automatic re-press: a refused request cannot be retried into a success,
+// and a press that has not settled cannot be told apart from a slow one.
+
+check('a press is recorded as an attempt, not as a completed detection', () => {
+  const page = load({ text: '要检测的内容' });
+  page.ZQ.autoDetect();
+
+  assert.equal(page.ZQ.attemptState(), 'submitted-unconfirmed',
+    'no confirmation exists yet at the moment of the click');
+});
+
+check('a counter that fell settles the attempt as completed', () => {
+  const page = load({ text: '要检测的内容' });
+  page.ZQ.readQuota = () => ({ remaining: 5, exhausted: false });
+  page.ZQ.autoDetect();
+
+  // The site charges a detection, so its own counter drops. That is the one observable proof.
+  page.ZQ.readQuota = () => ({ remaining: 4, exhausted: false });
+  assert.equal(page.ZQ.attemptState(), 'completed');
+});
+
+check('a refusal settles the attempt as blocked', () => {
+  const page = load({ text: '要检测的内容' });
+  page.ZQ.readQuota = () => ({ remaining: 5, exhausted: false });
+  page.ZQ.pageState = () => 'ambiguous';
+  page.ZQ.autoDetect();
+
+  assert.equal(page.ZQ.attemptState(), 'blocked', 'the page shows the server refusing');
+});
+
+check('a blocked text is never pressed again', () => {
+  const page = load({ text: '要检测的内容' });
+  page.ZQ.readQuota = () => ({ remaining: 5, exhausted: false });
+  page.ZQ.pageState = () => 'ambiguous';
+  page.ZQ.autoDetect();
+  page.ZQ.autoDetect();
+  page.ZQ.autoDetect();
+
+  assert.equal(page.clicks.length, 1, 'a retry would send the same doomed request');
+});
+
+check('an unconfirmed text is not pressed again either', () => {
+  const page = load({ text: '要检测的内容' });
+  page.ZQ.autoDetect();
+  page.ZQ.autoDetect();
+
+  assert.equal(page.clicks.length, 1, 'unconfirmed must not be read as "did not happen"');
+});
+
+check('a bare fingerprint from an older build is read as settled', () => {
+  const page = load({ text: '旧版本存下的内容' });
+  // The previous build stored the fingerprint as a plain string.
+  page.store.set('zqLastDetected', '旧版本存下的内容');
+
+  page.ZQ.autoDetect();
+  assert.equal(page.clicks.length, 0, 'an upgrade must not re-press text already submitted');
+});
+
+// --- the address rule has to be confirmed before a detection can go out ------
+
+check('a refused header rule stops the press', () => {
+  const page = load({ text: '要检测的内容' });
+  page.ZQ.state.identityConfirmed = false;
+
+  page.ZQ.autoDetect();
+  assert.equal(page.clicks.length, 0,
+    'the ticket would be issued for another address and the detection refused');
+});
+
+check('a confirmed rule allows the press', () => {
+  const page = load({ text: '要检测的内容' });
+  page.ZQ.state.identityConfirmed = true;
+
+  page.ZQ.autoDetect();
+  assert.equal(page.clicks.length, 1);
+});
+
+check('an unconfirmed rule does not block the press', () => {
+  const page = load({ text: '要检测的内容' });
+  page.ZQ.state.identityConfirmed = null;
+
+  page.ZQ.autoDetect();
+  assert.equal(page.clicks.length, 1, 'a slow install must not stall the automation');
+});
+
 if (failures.length) {
-  process.stdout.write(`\nFAIL: ${failures.length} of 12 checks\n`);
+  process.stdout.write(`\nFAIL: ${failures.length} of 21 checks\n`);
   process.exitCode = 1;
 } else {
-  process.stdout.write('\nPASS: 12/12 auto-detect checks\n');
+  process.stdout.write('\nPASS: 21/21 auto-detect checks\n');
 }

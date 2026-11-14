@@ -72,6 +72,9 @@
     "e2e:identity": "node tests/e2e/e2e-identity.cjs",
     "e2e:auto-refresh": "node tests/e2e/e2e-auto-refresh.cjs",
     "e2e:captcha-guard": "node tests/e2e/e2e-captcha-guard.cjs",
-    "setup": "node host/register-manifest.cjs && node tests/integration/test-native-registration.cjs"
+    "setup": "node host/register-manifest.cjs && node tests/integration/test-native-registration.cjs",
+    "test:identity-rule-lifecycle": "node tests/unit/test-identity-rule-lifecycle.cjs",
+    "test:document-start": "node tests/unit/test-document-start.cjs",
+    "test:draft-safety": "node tests/unit/test-draft-safety.cjs"
   }
 }

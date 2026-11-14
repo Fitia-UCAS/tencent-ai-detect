@@ -120,14 +120,6 @@
         return true;
     };
 
-    function lastDetected() {
-        try {
-            return localStorage.getItem(LAST_DETECTED_KEY) || '';
-        } catch (e) {
-            return '';
-        }
-    }
-
     // Compares on the text with all whitespace removed.
     //
     // The site's editor normalises line breaks and spacing as it renders, so the text read back
@@ -135,19 +127,111 @@
     // treated a restored draft as brand-new text, pressed detect again, and produced a detection
     // with no captcha ticket - which the server answers with "Invalid request". That is the loop
     // this normalisation closes.
+    //
+    // It is a deliberately loose fingerprint for suppressing repeat submissions, not an identity
+    // for the text: "a b" and "ab" collapse together. Skipping the second one costs nothing (the
+    // site judges meaning, and a space does not change it), while treating a re-rendered draft as
+    // new text costs a request the server is guaranteed to refuse.
     function fingerprint(text) {
         return String(text || '').replace(/\s+/g, '');
     }
 
-    function rememberDetected(text) {
+    // What the last automatic click did with the text it ran on.
+    //
+    // A click is not a completed detection, and the site offers no event that says "the server
+    // accepted this". So the record carries the state the click left behind, and never claims more
+    // than was observed:
+    //
+    //   submitted-unconfirmed  pressed; nothing on the page has settled it yet
+    //   completed              the site's own counter fell, so one detection was charged
+    //   blocked                the page shows the server's refusal; pressing again would send the
+    //                          same doomed request
+    //   unknown                a value written by an older build as a bare fingerprint
+    //
+    // None of these permit an automatic re-press. A refusal cannot be retried into a success - the
+    // ticket is gone - and an unconfirmed press cannot be told apart from a slow one. That is why
+    // there is no retry here at all: the cost of guessing wrong is a request the server refuses.
+    const ATTEMPT_KEY = LAST_DETECTED_KEY;
+
+    function readAttempt() {
+        let raw = null;
+
         try {
-            localStorage.setItem(LAST_DETECTED_KEY, fingerprint(text));
+            raw = localStorage.getItem(ATTEMPT_KEY);
+        } catch (e) {
+            return null;
+        }
+
+        if (!raw) return null;
+
+        // A bare fingerprint from an older build. Read as settled, so an upgrade cannot turn text
+        // that was already submitted into a fresh, ticket-less click.
+        if (raw.charAt(0) !== '{') return { f: raw, s: 'unknown', a: 1, t: 0, q: null };
+
+        try {
+            const parsed = JSON.parse(raw);
+            return {
+                f: String(parsed.f || ''),
+                s: String(parsed.s || 'unknown'),
+                a: Number(parsed.a) || 1,
+                t: Number(parsed.t) || 0,
+                q: typeof parsed.q === 'number' ? parsed.q : null
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function writeAttempt(attempt) {
+        try {
+            localStorage.setItem(ATTEMPT_KEY, JSON.stringify(attempt));
         } catch (e) {
         }
     }
 
-    // Clicks only when there is something to detect, the control is ready, and this exact text has
-    // not already been run.
+    function currentQuota() {
+        if (typeof ZQ.readQuota !== 'function') return null;
+
+        try {
+            const quota = ZQ.readQuota();
+            return quota && typeof quota.remaining === 'number' ? quota.remaining : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // Records whatever settled since the press. Only two outcomes are observable from the page: the
+    // refusal wording, and a counter that fell because a detection was charged.
+    function settleAttempt() {
+        const attempt = readAttempt();
+        if (!attempt || attempt.s !== 'submitted-unconfirmed') return attempt;
+
+        let settled = null;
+
+        if (typeof ZQ.pageState === 'function' && ZQ.pageState() === 'ambiguous') {
+            settled = 'blocked';
+        } else {
+            const quota = currentQuota();
+            if (attempt.q !== null && quota !== null && quota < attempt.q) settled = 'completed';
+        }
+
+        if (!settled) return attempt;
+
+        const next = { ...attempt, s: settled };
+        writeAttempt(next);
+        return next;
+    }
+
+    // The state recorded for the text in the editor, for the panel and for tests.
+    ZQ.attemptState = function () {
+        const attempt = settleAttempt();
+        const text = ZQ.readEditor();
+        if (!attempt || attempt.f !== fingerprint(text)) return 'idle';
+        return attempt.s;
+    };
+
+    // Clicks only when there is something to detect, the control is ready, and this text has not
+    // already had its press.
     ZQ.autoDetect = function () {
         if (!ZQ.state.enabled || !ZQ.state.autoRefresh || ZQ.state.rotating) return false;
 
@@ -156,12 +240,32 @@
 
         const text = ZQ.readEditor();
         if (!text) return false;
-        if (fingerprint(text) === lastDetected()) return false;
+
+        // A refused rule means the ticket will be issued for the real address while the socket
+        // carries the synthetic one, and the server refuses that pairing every time. Sending anyway
+        // would spend the press on a request that cannot succeed. Unconfirmed (null) still goes
+        // ahead: the install is usually just slower than the first tick.
+        if (ZQ.state.identityConfirmed === false) return false;
+
+        const print = fingerprint(text);
+        const previous = settleAttempt();
+
+        // Any recorded state for this text means it has had its press. See the note above on why
+        // none of them is retried.
+        if (previous && previous.f === print) return false;
 
         const button = ZQ.detectButton();
         if (!button || button.disabled) return false;
 
-        rememberDetected(text);
+        // Recorded before the click, because the click can start a page change that removes the
+        // editor. The interval must not come back to the same text while the request is in flight.
+        writeAttempt({
+            f: print,
+            s: 'submitted-unconfirmed',
+            a: 1,
+            t: Date.now(),
+            q: currentQuota()
+        });
         button.click();
 
         return true;
