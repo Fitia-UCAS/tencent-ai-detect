@@ -78,6 +78,7 @@
     "test:draft-safety": "node tests/unit/test-draft-safety.cjs",
     "review:compare": "node tools/compare-review.cjs",
     "test:compare-review": "node tests/unit/test-compare-review.cjs",
-    "test:transport-recovery": "node tests/unit/test-transport-recovery.cjs"
+    "test:transport-recovery": "node tests/unit/test-transport-recovery.cjs",
+    "test:identity-retry": "node tests/unit/test-identity-retry.cjs"
   }
 }

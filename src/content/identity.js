@@ -114,7 +114,33 @@
             }
 
             ZQ.state.identityConfirmed = false;
+
+            // A refused rule stops the detection - the ticket would be issued for another address -
+            // so it has to be visible, or the page just looks broken. It also has to be retried:
+            // a transient failure (worker restarting, rules being replaced) would otherwise leave
+            // this load permanently unable to detect with no way back.
+            ZQ.reportState(ZQ.currentState('identity-unconfirmed'));
+            retryIdentity(identity);
+
             return response;
         });
     };
+
+    // Identity retries are paced and bounded per load. The reload path also republishes, so this is
+    // only what keeps a page from staying stuck when no reload happens.
+    ZQ.IDENTITY_RETRY_MS = 5000;
+    ZQ.IDENTITY_RETRY_LIMIT = 3;
+
+    let identityRetries = 0;
+
+    function retryIdentity(identity) {
+        if (identityRetries >= ZQ.IDENTITY_RETRY_LIMIT) return;
+
+        identityRetries += 1;
+
+        setTimeout(() => {
+            if (!ZQ.state.contextAlive || ZQ.state.identityConfirmed === true) return;
+            ZQ.publishIdentity(identity);
+        }, ZQ.IDENTITY_RETRY_MS * identityRetries);
+    }
 })();
