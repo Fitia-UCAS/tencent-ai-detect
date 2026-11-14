@@ -1,8 +1,8 @@
-// Verifies that the page remains usable with the extension installed.
+// Verifies that the page remains usable through the local relay with the extension installed.
 //
 // This test does not force the relay offline: the extension worker can start it
-// again. The isolated relay-off condition is tested separately by diag-shim.cjs,
-// which loads the shim without loading the extension.
+// again. The isolated relay-off condition is covered by unit tests, which assert
+// that a failed relay is surfaced instead of silently opening the origin directly.
 const path = require('node:path');
 
 const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
@@ -52,21 +52,19 @@ const fail = message => {
     await page.send('Runtime.enable');
     await page.send('Page.navigate', { url: SITE });
 
-    // Give the page time to try the relay, fail, and fall back.
+    // Give the page time to connect through the relay and receive a response.
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline && !frames.length) await sleep(500);
 
-    // 1. The socket must end up talking to the real server, and the first frame
-    //    must be replayed rather than dropped. Whether it reached there directly
-    //    or after a relay attempt depends on relay timing, which this test does
-    //    not control — so it asserts the outcome, not the route.
-    if (sockets.some(u => u.includes('matrix.tencent.com'))) {
-      ok('socket reached matrix.tencent.com');
-    } else if (sockets.some(u => u.startsWith('ws://127.0.0.1'))) {
-      // The relay came back mid-test; that is a valid outcome, not a failure.
-      process.stdout.write('  skip  relay was reinstated by the worker; route not asserted\n');
+    // 1. The browser-facing socket must remain on the local relay. A direct
+    //    origin socket would mean the shim silently bypassed a failed relay.
+    if (sockets.some(u => u.startsWith('ws://127.0.0.1:9420/ws'))) {
+      ok('browser-facing socket connected through the local relay');
     } else {
-      fail('no usable socket was created at all');
+      fail(`expected a local relay socket; observed: ${sockets.join(', ') || '(none)'}`);
+    }
+    if (sockets.some(u => u.includes('matrix.tencent.com'))) {
+      fail('shim opened the original endpoint directly instead of failing closed');
     }
 
     // 2. The server must have answered, proving the first frame was delivered.

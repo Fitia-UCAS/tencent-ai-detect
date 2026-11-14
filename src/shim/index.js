@@ -4,8 +4,8 @@
 // deliberately preserves the WebSocket/EventTarget surface exposed to the page:
 // listeners belong to the wrapper, not to a replaceable underlying socket.
 //
-// If the relay cannot establish a connection before opening, the wrapper falls
-// back to the original URL. A failed relay attempt is kept invisible to the page.
+// If the relay cannot establish a connection before opening, the wrapper
+// reports a terminal WebSocket failure. It never silently switches to the original URL.
 (function() {
     'use strict';
 
@@ -121,7 +121,6 @@
             this._protocols = protocols;
             this._sock = null;
             this._open = false;
-            this._fellBack = false;
             this._failed = false;
             this._closeRequested = false;
             this._binaryType = 'blob';
@@ -192,7 +191,7 @@
 
             sock.onerror = event => {
                 if (useRelay && !this._open && !this._closeRequested) {
-                    this._fallback();
+                    this._failRelay();
                     return;
                 }
                 this._emit('error', event);
@@ -203,7 +202,7 @@
                 this._open = false;
 
                 if (useRelay && !hadOpened && !this._closeRequested) {
-                    this._fallback();
+                    this._failRelay();
                     return;
                 }
                 this._emit('close', event);
@@ -215,10 +214,13 @@
             EventTargetCtor.prototype.dispatchEvent.call(this, event);
         }
 
-        _fallback() {
-            if (this._fellBack || this._closeRequested) return;
-            this._fellBack = true;
-            this._connect(false, false);
+        _failRelay() {
+            // A relay transport failure is not a reason to bypass the relay by
+            // opening the original endpoint directly. Surface one terminal error
+            // instead, so diagnostics can distinguish transport failure from a
+            // server response received over an established connection.
+            if (this._failed || this._closeRequested) return;
+            this._fail();
         }
 
         _fail() {

@@ -237,71 +237,70 @@ test('removeEventListener distinguishes capture registrations', () => {
   assert.equal(calls, 1);
 });
 
-test('relay failure stays invisible and falls back without replaying frames', () => {
+test('relay failure is visible and never opens the original endpoint', async () => {
   resetFake();
   const socket = new WebSocketShim(TARGET_URL);
   const relay = latestSocket();
   let errors = 0;
   let closes = 0;
   let opens = 0;
-  socket.addEventListener('error', () => errors++);
-  socket.addEventListener('close', () => closes++);
-  socket.addEventListener('open', () => opens++);
-  socket.binaryType = 'arraybuffer';
-
-  relay.fail();
-  assert.equal(FakeWebSocket.instances.length, 2);
-  const direct = latestSocket();
-  assert.equal(direct.url, TARGET_URL);
-  assert.equal(direct.binaryType, 'arraybuffer');
-  assert.equal(errors, 0);
-  assert.equal(closes, 0);
-
-  direct.open();
-  assert.equal(opens, 1);
-  assert.equal(socket.readyState, WebSocketShim.OPEN);
-});
-
-test('fallback construction failure dispatches one error and one close; no late replay', async () => {
-  resetFake();
-  FakeWebSocket.throwOnUrl = TARGET_URL;
-  const socket = new WebSocketShim(TARGET_URL);
-  let errors = 0;
-  let closes = 0;
-  const order = [];
   socket.addEventListener('error', event => {
     assert.equal(event.target, socket);
     errors++;
-    order.push('error');
-    socket.addEventListener('close', () => order.push('close-added-during-error'));
   });
   socket.addEventListener('close', event => {
     assert.equal(event.target, socket);
     assert.equal(event.code, 1006);
     closes++;
-    order.push('close');
   });
+  socket.addEventListener('open', () => opens++);
 
-  latestSocket().fail();
+  // A send queued while the relay is connecting must not be replayed over a
+  // direct connection after the relay fails.
+  socket.send('pending handshake');
+  relay.fail();
+  // Browsers may subsequently report close after error; the wrapper must emit
+  // only one terminal error/close pair for the failed relay attempt.
+  relay.finishClose({ code: 1006, reason: '', wasClean: false });
+
+  assert.equal(FakeWebSocket.instances.length, 1);
   assert.equal(socket.readyState, WebSocketShim.CLOSED);
+  assert.equal(socket._pendingSends.length, 0);
+  assert.equal(errors, 0);
+  assert.equal(closes, 0);
 
-  // The terminal event task is queued. A listener attached before it runs must
-  // observe the event; one attached after it has run must not get a replay.
-  let lateButInTime = 0;
-  socket.addEventListener('error', () => lateButInTime++);
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(errors, 1);
   assert.equal(closes, 1);
-  assert.equal(lateButInTime, 1);
-  assert.deepEqual(order, ['error', 'close', 'close-added-during-error']);
+  assert.equal(opens, 0);
+  assert.equal(FakeWebSocket.instances.length, 1);
+});
 
-  let lateErrors = 0;
-  let lateCloses = 0;
-  socket.addEventListener('error', () => lateErrors++);
-  socket.addEventListener('close', () => lateCloses++);
+test('synchronous relay constructor errors remain synchronous', () => {
+  resetFake();
+  FakeWebSocket.throwOnUrl = 'ws://127.0.0.1:9420/ws';
+  assert.throws(
+    () => new WebSocketShim(TARGET_URL),
+    error => error && error.name === 'SyntaxError'
+  );
+  assert.equal(FakeWebSocket.instances.length, 0);
+});
+
+test('relay close before open dispatches one terminal error and close', async () => {
+  resetFake();
+  const socket = new WebSocketShim(TARGET_URL);
+  const relay = latestSocket();
+  const events = [];
+  socket.addEventListener('error', () => events.push('error'));
+  socket.addEventListener('close', event => {
+    assert.equal(event.code, 1006);
+    events.push('close');
+  });
+
+  relay.finishClose({ code: 1006, reason: '', wasClean: false });
+  assert.equal(FakeWebSocket.instances.length, 1);
   await new Promise(resolve => setTimeout(resolve, 10));
-  assert.equal(lateErrors, 0);
-  assert.equal(lateCloses, 0);
+  assert.deepEqual(events, ['error', 'close']);
 });
 
 // Deliberate divergence from the native contract, and only for the detection
@@ -377,7 +376,7 @@ test('a stale open handler sending into a connecting socket delivers every send'
   assert.equal(first.readyState, 1);
 });
 
-test('closing a connecting relay does not start an unsolicited fallback', () => {
+test('closing a connecting relay does not create a second socket', () => {
   resetFake();
   const socket = new WebSocketShim(TARGET_URL);
   const relay = latestSocket();
@@ -389,15 +388,21 @@ test('closing a connecting relay does not start an unsolicited fallback', () => 
   assert.equal(closes, 1);
 });
 
-test('native close validation errors are preserved and do not suppress fallback', () => {
+test('native close validation errors are preserved and do not suppress relay failure events', async () => {
   resetFake();
   const socket = new WebSocketShim(TARGET_URL);
   const relay = latestSocket();
   assert.throws(() => socket.close(1001), error => error.name === 'InvalidAccessError');
   assert.throws(() => socket.close(3000, 'x'.repeat(124)), error => error.name === 'SyntaxError');
+  let errors = 0;
+  let closes = 0;
+  socket.addEventListener('error', () => errors++);
+  socket.addEventListener('close', () => closes++);
   relay.fail();
-  assert.equal(FakeWebSocket.instances.length, 2);
-  assert.equal(latestSocket().url, TARGET_URL);
+  assert.equal(FakeWebSocket.instances.length, 1);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(errors, 1);
+  assert.equal(closes, 1);
 });
 
 (async () => {
