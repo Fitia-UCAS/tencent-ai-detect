@@ -43,7 +43,7 @@ const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
         const click = async label => {
             const spot = await page.send('Runtime.evaluate', {
                 expression: `(() => {
-                    // The label carries a live counter ("立即检测(今日剩余5次)"), so
+                    // The label carries a live counter (e.g. "5 left today"), so
                     // an exact match misses it. Match on contains, and prefer the
                     // shortest match so a container does not win over the button.
                     const hits = [...document.querySelectorAll('button')]
@@ -63,7 +63,7 @@ const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
             return true;
         };
 
-        // Close the "重要声明" notice if it is covering the page.
+        // Close the site's announcement notice if it is covering the page.
         await page.send('Runtime.evaluate', {
             expression: `(() => {
                 const x = document.querySelector('.el-notification__closeBtn, .el-message-box__close');

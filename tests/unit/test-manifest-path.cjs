@@ -27,62 +27,62 @@ const manifestPath = path.join(stateDir, 'nm-manifest.json');
 const env = { ...process.env, ZQ_KEY_DIR: stateDir };
 
 try {
-  fs.mkdirSync(checkout, { recursive: true });
-  for (const name of ['nm-host.bat', 'nm-manifest.template.json', 'register-manifest.cjs']) {
-    fs.copyFileSync(path.join(from, name), path.join(checkout, name));
-  }
+    fs.mkdirSync(checkout, { recursive: true });
+    for (const name of ['nm-host.bat', 'nm-manifest.template.json', 'register-manifest.cjs']) {
+        fs.copyFileSync(path.join(from, name), path.join(checkout, name));
+    }
 
-  // No generated manifest is copied in: registration must create it from the template.
-  const run = spawnSync(process.execPath, [path.join(checkout, 'register-manifest.cjs')], { encoding: 'utf8', env });
-  assert.equal(run.status, 0, run.stderr || run.stdout);
+    // No generated manifest is copied in: registration must create it from the template.
+    const run = spawnSync(process.execPath, [path.join(checkout, 'register-manifest.cjs')], { encoding: 'utf8', env });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
 
-  assert.ok(fs.existsSync(manifestPath), 'manifest must be written to the state directory');
-  assert.ok(
-    !fs.existsSync(path.join(checkout, 'nm-manifest.json')),
-    'manifest must not be written into the checkout'
-  );
-
-  const actual = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  assert.equal(actual.path, path.join(checkout, 'nm-host.bat'), 'path must follow the checkout location');
-  assert.deepEqual(actual.allowed_origins, template.allowed_origins);
-  assert.equal(actual.name, template.name);
-  assert.equal(actual.type, 'stdio');
-
-  // Running it again must be idempotent rather than appending anything.
-  const again = spawnSync(process.execPath, [path.join(checkout, 'register-manifest.cjs')], { encoding: 'utf8', env });
-  assert.equal(again.status, 0, again.stderr || again.stdout);
-  const second = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  assert.deepEqual(second, actual, 'regeneration must not change the result');
-
-  // The working branch must not track the generated file, so a checkout cannot delete it. main is
-  // the frozen baseline and is deliberately left alone: it still tracks a machine-specific
-  // manifest under host/nm-manifest.json, which is part of why the two branches disagreed.
-  const tracked = spawnSync('git', ['ls-tree', '-r', '--name-only', 'dev'], { cwd: from, encoding: 'utf8' });
-  if (tracked.status === 0) {
-    const trackedFiles = String(tracked.stdout).split(/\r?\n/);
+    assert.ok(fs.existsSync(manifestPath), 'manifest must be written to the state directory');
     assert.ok(
-      !trackedFiles.some(f => /nm-manifest\.(local\.)?json$/.test(f) && !f.endsWith('.template.json')),
-      'dev must not track a generated manifest'
+        !fs.existsSync(path.join(checkout, 'nm-manifest.json')),
+        'manifest must not be written into the checkout'
     );
-  }
 
-  // Ask the script where it would write, so a future refactor that reintroduces an in-tree path is
-  // caught even if it uses a different filename. Requiring it also prints a status line, so only
-  // the last line is the reported path.
-  const asked = spawnSync(
-    process.execPath,
-    ['-e', `console.log(require(${JSON.stringify(path.join(checkout, 'register-manifest.cjs'))}).outputPath)`],
-    { encoding: 'utf8', env }
-  );
-  assert.equal(asked.status, 0, asked.stderr || asked.stdout);
-  const reported = asked.stdout.trim().split(/\r?\n/).pop();
-  assert.equal(path.resolve(reported), path.resolve(manifestPath));
-  assert.ok(
-    !path.resolve(reported).startsWith(path.resolve(checkout) + path.sep),
-    'the reported output path must sit outside the checkout'
-  );
+    const actual = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(actual.path, path.join(checkout, 'nm-host.bat'), 'path must follow the checkout location');
+    assert.deepEqual(actual.allowed_origins, template.allowed_origins);
+    assert.equal(actual.name, template.name);
+    assert.equal(actual.type, 'stdio');
 
-  console.log('PASS: Native Host manifest generated from template, outside the checkout');
+    // Running it again must be idempotent rather than appending anything.
+    const again = spawnSync(process.execPath, [path.join(checkout, 'register-manifest.cjs')], { encoding: 'utf8', env });
+    assert.equal(again.status, 0, again.stderr || again.stdout);
+    const second = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.deepEqual(second, actual, 'regeneration must not change the result');
+
+    // The working branch must not track the generated file, so a checkout cannot delete it. main is
+    // the frozen baseline and is deliberately left alone: it still tracks a machine-specific
+    // manifest under host/nm-manifest.json, which is part of why the two branches disagreed.
+    const tracked = spawnSync('git', ['ls-tree', '-r', '--name-only', 'dev'], { cwd: from, encoding: 'utf8' });
+    if (tracked.status === 0) {
+        const trackedFiles = String(tracked.stdout).split(/\r?\n/);
+        assert.ok(
+            !trackedFiles.some(f => /nm-manifest\.(local\.)?json$/.test(f) && !f.endsWith('.template.json')),
+            'dev must not track a generated manifest'
+        );
+    }
+
+    // Ask the script where it would write, so a future refactor that reintroduces an in-tree path is
+    // caught even if it uses a different filename. Requiring it also prints a status line, so only
+    // the last line is the reported path.
+    const asked = spawnSync(
+        process.execPath,
+        ['-e', `console.log(require(${JSON.stringify(path.join(checkout, 'register-manifest.cjs'))}).outputPath)`],
+        { encoding: 'utf8', env }
+    );
+    assert.equal(asked.status, 0, asked.stderr || asked.stdout);
+    const reported = asked.stdout.trim().split(/\r?\n/).pop();
+    assert.equal(path.resolve(reported), path.resolve(manifestPath));
+    assert.ok(
+        !path.resolve(reported).startsWith(path.resolve(checkout) + path.sep),
+        'the reported output path must sit outside the checkout'
+    );
+
+    console.log('PASS: Native Host manifest generated from template, outside the checkout');
 } finally {
-  fs.rmSync(temp, { recursive: true, force: true });
+    fs.rmSync(temp, { recursive: true, force: true });
 }

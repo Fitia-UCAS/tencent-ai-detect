@@ -5,8 +5,8 @@ const { relayPidForPort } = require('../../tools/find-relay-pid.cjs');
 
 let seen = null;
 const fake = stdout => (name, args, opts) => {
-  seen = { name, args, opts };
-  return { status: 0, stdout };
+    seen = { name, args, opts };
+    return { status: 0, stdout };
 };
 assert.equal(relayPidForPort(9420, { platform: 'linux', spawnSync: fake('123\n') }), null);
 assert.equal(relayPidForPort(0, { platform: 'win32', spawnSync: fake('123\n') }), null);

@@ -7,120 +7,120 @@ const vm = require('node:vm');
 const { Event, EventTarget, MessageEvent, DOMException } = globalThis;
 
 class TestCloseEvent extends Event {
-  constructor(type, init = {}) {
-    super(type);
-    this.code = init.code || 0;
-    this.reason = init.reason || '';
-    this.wasClean = !!init.wasClean;
-  }
+    constructor(type, init = {}) {
+        super(type);
+        this.code = init.code || 0;
+        this.reason = init.reason || '';
+        this.wasClean = !!init.wasClean;
+    }
 }
 
 class FakeWebSocket extends EventTarget {
-  static CONNECTING = 0;
-  static OPEN = 1;
-  static CLOSING = 2;
-  static CLOSED = 3;
-  static instances = [];
-  static throwOnUrl = null;
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+    static instances = [];
+    static throwOnUrl = null;
 
-  constructor(url, protocols) {
-    super();
+    constructor(url, protocols) {
+        super();
 
-    if (FakeWebSocket.throwOnUrl && url === FakeWebSocket.throwOnUrl) {
-      throw new DOMException('simulated synchronous construction failure', 'SyntaxError');
-    }
-
-    if (protocols !== undefined) {
-      const list = typeof protocols === 'string' ? [protocols] : Array.from(protocols);
-      const seen = new Set();
-      for (const protocol of list) {
-        if (typeof protocol !== 'string' || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(protocol) || seen.has(protocol)) {
-          throw new DOMException('invalid WebSocket subprotocol', 'SyntaxError');
+        if (FakeWebSocket.throwOnUrl && url === FakeWebSocket.throwOnUrl) {
+            throw new DOMException('simulated synchronous construction failure', 'SyntaxError');
         }
-        seen.add(protocol);
-      }
+
+        if (protocols !== undefined) {
+            const list = typeof protocols === 'string' ? [protocols] : Array.from(protocols);
+            const seen = new Set();
+            for (const protocol of list) {
+                if (typeof protocol !== 'string' || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(protocol) || seen.has(protocol)) {
+                    throw new DOMException('invalid WebSocket subprotocol', 'SyntaxError');
+                }
+                seen.add(protocol);
+            }
+        }
+
+        Object.defineProperty(this, 'url', { value: url, configurable: true, enumerable: true });
+        for (const [name, value] of Object.entries({
+            protocol: '', extensions: '', bufferedAmount: 0, binaryType: 'blob',
+            readyState: FakeWebSocket.CONNECTING
+        })) {
+            Object.defineProperty(this, name, { value, writable: true, configurable: true, enumerable: true });
+        }
+        this.sent = [];
+        this.closeArgs = null;
+        FakeWebSocket.instances.push(this);
     }
 
-    Object.defineProperty(this, 'url', { value: url, configurable: true, enumerable: true });
-    for (const [name, value] of Object.entries({
-      protocol: '', extensions: '', bufferedAmount: 0, binaryType: 'blob',
-      readyState: FakeWebSocket.CONNECTING
-    })) {
-      Object.defineProperty(this, name, { value, writable: true, configurable: true, enumerable: true });
+    emit(type, event) {
+        const handler = this['on' + type];
+        if (typeof handler === 'function') handler.call(this, event || new Event(type));
     }
-    this.sent = [];
-    this.closeArgs = null;
-    FakeWebSocket.instances.push(this);
-  }
 
-  emit(type, event) {
-    const handler = this['on' + type];
-    if (typeof handler === 'function') handler.call(this, event || new Event(type));
-  }
-
-  open() {
-    this.readyState = FakeWebSocket.OPEN;
-    this.emit('open', new Event('open'));
-  }
-
-  receive(data) {
-    this.emit('message', new MessageEvent('message', {
-      data,
-      origin: 'wss://matrix.tencent.com',
-      lastEventId: 'test-event'
-    }));
-  }
-
-  fail() {
-    this.emit('error', new Event('error'));
-  }
-
-  finishClose({ code = 1006, reason = '', wasClean = false } = {}) {
-    this.readyState = FakeWebSocket.CLOSED;
-    this.emit('close', new TestCloseEvent('close', { code, reason, wasClean }));
-  }
-
-  send(data) {
-    if (this.readyState === FakeWebSocket.CONNECTING) {
-      throw new DOMException('still connecting', 'InvalidStateError');
+    open() {
+        this.readyState = FakeWebSocket.OPEN;
+        this.emit('open', new Event('open'));
     }
-    if (this.readyState !== FakeWebSocket.OPEN) return;
-    this.sent.push(data);
-  }
 
-  close(...args) {
-    const code = args[0];
-    const reason = args[1];
-    if (code !== undefined && code !== 1000 && (code < 3000 || code > 4999)) {
-      throw new DOMException('invalid close code', 'InvalidAccessError');
+    receive(data) {
+        this.emit('message', new MessageEvent('message', {
+            data,
+            origin: 'wss://matrix.tencent.com',
+            lastEventId: 'test-event'
+        }));
     }
-    if (reason !== undefined && Buffer.byteLength(String(reason), 'utf8') > 123) {
-      throw new DOMException('close reason is too long', 'SyntaxError');
+
+    fail() {
+        this.emit('error', new Event('error'));
     }
-    this.closeArgs = args;
-    this.readyState = FakeWebSocket.CLOSING;
-  }
+
+    finishClose({ code = 1006, reason = '', wasClean = false } = {}) {
+        this.readyState = FakeWebSocket.CLOSED;
+        this.emit('close', new TestCloseEvent('close', { code, reason, wasClean }));
+    }
+
+    send(data) {
+        if (this.readyState === FakeWebSocket.CONNECTING) {
+            throw new DOMException('still connecting', 'InvalidStateError');
+        }
+        if (this.readyState !== FakeWebSocket.OPEN) return;
+        this.sent.push(data);
+    }
+
+    close(...args) {
+        const code = args[0];
+        const reason = args[1];
+        if (code !== undefined && code !== 1000 && (code < 3000 || code > 4999)) {
+            throw new DOMException('invalid close code', 'InvalidAccessError');
+        }
+        if (reason !== undefined && Buffer.byteLength(String(reason), 'utf8') > 123) {
+            throw new DOMException('close reason is too long', 'SyntaxError');
+        }
+        this.closeArgs = args;
+        this.readyState = FakeWebSocket.CLOSING;
+    }
 }
 
 const window = {
-  WebSocket: FakeWebSocket,
-  EventTarget,
-  URL,
-  DOMException,
-  location: { href: 'https://matrix.tencent.com/ai-detect/' }
+    WebSocket: FakeWebSocket,
+    EventTarget,
+    URL,
+    DOMException,
+    location: { href: 'https://matrix.tencent.com/ai-detect/' }
 };
 
 const context = vm.createContext({
-  window,
-  EventTarget,
-  Event,
-  MessageEvent,
-  CloseEvent: TestCloseEvent,
-  DOMException,
-  URL,
-  setTimeout,
-  clearTimeout,
-  console
+    window,
+    EventTarget,
+    Event,
+    MessageEvent,
+    CloseEvent: TestCloseEvent,
+    DOMException,
+    URL,
+    setTimeout,
+    clearTimeout,
+    console
 });
 
 const shimPath = path.join(__dirname, '..', '..', 'src', 'shim', 'index.js');
@@ -131,176 +131,176 @@ const results = [];
 const tests = [];
 
 function test(name, fn) {
-  tests.push({ name, fn });
+    tests.push({ name, fn });
 }
 
 function resetFake() {
-  FakeWebSocket.instances.length = 0;
-  FakeWebSocket.throwOnUrl = null;
+    FakeWebSocket.instances.length = 0;
+    FakeWebSocket.throwOnUrl = null;
 }
 
 function latestSocket() {
-  return FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    return FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
 }
 
 test('wrapper remains an EventTarget and a WebSocket instance', () => {
-  resetFake();
-  const socket = new WebSocketShim('wss://example.com/ordinary');
-  assert.equal(socket instanceof EventTarget, true);
-  assert.equal(socket instanceof FakeWebSocket, true);
-  assert.equal(socket instanceof WebSocketShim, true);
-  assert.equal(WebSocketShim.CONNECTING, FakeWebSocket.CONNECTING);
-  assert.equal(socket.url, 'wss://example.com/ordinary');
+    resetFake();
+    const socket = new WebSocketShim('wss://example.com/ordinary');
+    assert.equal(socket instanceof EventTarget, true);
+    assert.equal(socket instanceof FakeWebSocket, true);
+    assert.equal(socket instanceof WebSocketShim, true);
+    assert.equal(WebSocketShim.CONNECTING, FakeWebSocket.CONNECTING);
+    assert.equal(socket.url, 'wss://example.com/ordinary');
 });
 
 test('native URL validation remains synchronous', () => {
-  resetFake();
-  const before = FakeWebSocket.instances.length;
-  assert.throws(
-    () => new WebSocketShim('https://matrix.tencent.com/ai_gen_txt_server/getClassify'),
-    error => error && error.name === 'SyntaxError'
-  );
-  assert.equal(FakeWebSocket.instances.length, before);
-  assert.throws(
-    () => new WebSocketShim('wss://matrix.tencent.com/ai_gen_txt_server/getClassify', ['bad protocol']),
-    error => error && error.name === 'SyntaxError'
-  );
+    resetFake();
+    const before = FakeWebSocket.instances.length;
+    assert.throws(
+        () => new WebSocketShim('https://matrix.tencent.com/ai_gen_txt_server/getClassify'),
+        error => error && error.name === 'SyntaxError'
+    );
+    assert.equal(FakeWebSocket.instances.length, before);
+    assert.throws(
+        () => new WebSocketShim('wss://matrix.tencent.com/ai_gen_txt_server/getClassify', ['bad protocol']),
+        error => error && error.name === 'SyntaxError'
+    );
 });
 
 test('EventTarget listeners receive wrapper-targeted open and message events', () => {
-  resetFake();
-  const socket = new WebSocketShim(TARGET_URL);
-  const relay = latestSocket();
-  const observed = [];
-  socket.addEventListener('open', event => observed.push(['open', event.target, event.currentTarget]));
-  socket.addEventListener('message', event => observed.push(['message', event.target, event.currentTarget, event.data]));
+    resetFake();
+    const socket = new WebSocketShim(TARGET_URL);
+    const relay = latestSocket();
+    const observed = [];
+    socket.addEventListener('open', event => observed.push(['open', event.target, event.currentTarget]));
+    socket.addEventListener('message', event => observed.push(['message', event.target, event.currentTarget, event.data]));
 
-  relay.open();
-  relay.receive('hello');
+    relay.open();
+    relay.receive('hello');
 
-  assert.equal(observed.length, 2);
-  assert.equal(observed[0][0], 'open');
-  assert.equal(observed[0][1], socket);
-  assert.equal(observed[0][2], socket);
-  assert.equal(observed[1][0], 'message');
-  assert.equal(observed[1][1], socket);
-  assert.equal(observed[1][2], socket);
-  assert.equal(observed[1][3], 'hello');
+    assert.equal(observed.length, 2);
+    assert.equal(observed[0][0], 'open');
+    assert.equal(observed[0][1], socket);
+    assert.equal(observed[0][2], socket);
+    assert.equal(observed[1][0], 'message');
+    assert.equal(observed[1][1], socket);
+    assert.equal(observed[1][2], socket);
+    assert.equal(observed[1][3], 'hello');
 });
 
 test('onmessage property handler uses the wrapper as this and event target', () => {
-  resetFake();
-  const socket = new WebSocketShim('wss://example.com/ordinary');
-  const native = latestSocket();
-  let seen = false;
-  socket.onmessage = function(event) {
-    seen = this === socket && event.target === socket && event.data === 'payload';
-  };
-  native.open();
-  native.receive('payload');
-  assert.equal(seen, true);
+    resetFake();
+    const socket = new WebSocketShim('wss://example.com/ordinary');
+    const native = latestSocket();
+    let seen = false;
+    socket.onmessage = function(event) {
+        seen = this === socket && event.target === socket && event.data === 'payload';
+    };
+    native.open();
+    native.receive('payload');
+    assert.equal(seen, true);
 });
 
 test('object listeners and once semantics follow EventTarget', () => {
-  resetFake();
-  const socket = new WebSocketShim('wss://example.com/ordinary');
-  const native = latestSocket();
-  let objectCalls = 0;
-  let onceCalls = 0;
-  const objectListener = {
-    handleEvent(event) {
-      assert.equal(this, objectListener);
-      assert.equal(event.target, socket);
-      objectCalls++;
-    }
-  };
-  socket.addEventListener('message', objectListener);
-  socket.addEventListener('message', () => onceCalls++, { once: true });
-  native.open();
-  native.receive('one');
-  native.receive('two');
-  assert.equal(objectCalls, 2);
-  assert.equal(onceCalls, 1);
+    resetFake();
+    const socket = new WebSocketShim('wss://example.com/ordinary');
+    const native = latestSocket();
+    let objectCalls = 0;
+    let onceCalls = 0;
+    const objectListener = {
+        handleEvent(event) {
+            assert.equal(this, objectListener);
+            assert.equal(event.target, socket);
+            objectCalls++;
+        }
+    };
+    socket.addEventListener('message', objectListener);
+    socket.addEventListener('message', () => onceCalls++, { once: true });
+    native.open();
+    native.receive('one');
+    native.receive('two');
+    assert.equal(objectCalls, 2);
+    assert.equal(onceCalls, 1);
 });
 
 test('removeEventListener distinguishes capture registrations', () => {
-  resetFake();
-  const socket = new WebSocketShim('wss://example.com/ordinary');
-  const native = latestSocket();
-  let calls = 0;
-  const listener = () => calls++;
-  socket.addEventListener('message', listener, false);
-  socket.addEventListener('message', listener, true);
-  socket.removeEventListener('message', listener, true);
-  native.open();
-  native.receive('one');
-  assert.equal(calls, 1);
+    resetFake();
+    const socket = new WebSocketShim('wss://example.com/ordinary');
+    const native = latestSocket();
+    let calls = 0;
+    const listener = () => calls++;
+    socket.addEventListener('message', listener, false);
+    socket.addEventListener('message', listener, true);
+    socket.removeEventListener('message', listener, true);
+    native.open();
+    native.receive('one');
+    assert.equal(calls, 1);
 });
 
 test('relay failure is visible and never opens the original endpoint', async () => {
-  resetFake();
-  const socket = new WebSocketShim(TARGET_URL);
-  const relay = latestSocket();
-  let errors = 0;
-  let closes = 0;
-  let opens = 0;
-  socket.addEventListener('error', event => {
-    assert.equal(event.target, socket);
-    errors++;
-  });
-  socket.addEventListener('close', event => {
-    assert.equal(event.target, socket);
-    assert.equal(event.code, 1006);
-    closes++;
-  });
-  socket.addEventListener('open', () => opens++);
+    resetFake();
+    const socket = new WebSocketShim(TARGET_URL);
+    const relay = latestSocket();
+    let errors = 0;
+    let closes = 0;
+    let opens = 0;
+    socket.addEventListener('error', event => {
+        assert.equal(event.target, socket);
+        errors++;
+    });
+    socket.addEventListener('close', event => {
+        assert.equal(event.target, socket);
+        assert.equal(event.code, 1006);
+        closes++;
+    });
+    socket.addEventListener('open', () => opens++);
 
-  // A send queued while the relay is connecting must not be replayed over a
-  // direct connection after the relay fails.
-  socket.send('pending handshake');
-  relay.fail();
-  // Browsers may subsequently report close after error; the wrapper must emit
-  // only one terminal error/close pair for the failed relay attempt.
-  relay.finishClose({ code: 1006, reason: '', wasClean: false });
+    // A send queued while the relay is connecting must not be replayed over a
+    // direct connection after the relay fails.
+    socket.send('pending handshake');
+    relay.fail();
+    // Browsers may subsequently report close after error; the wrapper must emit
+    // only one terminal error/close pair for the failed relay attempt.
+    relay.finishClose({ code: 1006, reason: '', wasClean: false });
 
-  assert.equal(FakeWebSocket.instances.length, 1);
-  assert.equal(socket.readyState, WebSocketShim.CLOSED);
-  assert.equal(socket._pendingSends.length, 0);
-  assert.equal(errors, 0);
-  assert.equal(closes, 0);
+    assert.equal(FakeWebSocket.instances.length, 1);
+    assert.equal(socket.readyState, WebSocketShim.CLOSED);
+    assert.equal(socket._pendingSends.length, 0);
+    assert.equal(errors, 0);
+    assert.equal(closes, 0);
 
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.equal(errors, 1);
-  assert.equal(closes, 1);
-  assert.equal(opens, 0);
-  assert.equal(FakeWebSocket.instances.length, 1);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(errors, 1);
+    assert.equal(closes, 1);
+    assert.equal(opens, 0);
+    assert.equal(FakeWebSocket.instances.length, 1);
 });
 
 test('synchronous relay constructor errors remain synchronous', () => {
-  resetFake();
-  FakeWebSocket.throwOnUrl = 'ws://127.0.0.1:9420/ws';
-  assert.throws(
-    () => new WebSocketShim(TARGET_URL),
-    error => error && error.name === 'SyntaxError'
-  );
-  assert.equal(FakeWebSocket.instances.length, 0);
+    resetFake();
+    FakeWebSocket.throwOnUrl = 'ws://127.0.0.1:9420/ws';
+    assert.throws(
+        () => new WebSocketShim(TARGET_URL),
+        error => error && error.name === 'SyntaxError'
+    );
+    assert.equal(FakeWebSocket.instances.length, 0);
 });
 
 test('relay close before open dispatches one terminal error and close', async () => {
-  resetFake();
-  const socket = new WebSocketShim(TARGET_URL);
-  const relay = latestSocket();
-  const events = [];
-  socket.addEventListener('error', () => events.push('error'));
-  socket.addEventListener('close', event => {
-    assert.equal(event.code, 1006);
-    events.push('close');
-  });
+    resetFake();
+    const socket = new WebSocketShim(TARGET_URL);
+    const relay = latestSocket();
+    const events = [];
+    socket.addEventListener('error', () => events.push('error'));
+    socket.addEventListener('close', event => {
+        assert.equal(event.code, 1006);
+        events.push('close');
+    });
 
-  relay.finishClose({ code: 1006, reason: '', wasClean: false });
-  assert.equal(FakeWebSocket.instances.length, 1);
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.deepEqual(events, ['error', 'close']);
+    relay.finishClose({ code: 1006, reason: '', wasClean: false });
+    assert.equal(FakeWebSocket.instances.length, 1);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.deepEqual(events, ['error', 'close']);
 });
 
 // Deliberate divergence from the native contract, and only for the detection
@@ -313,37 +313,37 @@ test('relay close before open dispatches one terminal error and close', async ()
 // the page did not catch: it surfaced as an uncaught InvalidStateError and the
 // handshake frame was lost. See the stale-handler case below.
 test('send while connecting is queued and delivered on open, not thrown', () => {
-  resetFake();
-  const socket = new WebSocketShim(TARGET_URL);
-  const native = latestSocket();
-  assert.doesNotThrow(() => socket.send('too early'));
-  assert.deepEqual(native.sent, []);
-  native.open();
-  assert.deepEqual(native.sent, ['too early']);
-  socket.send('ready');
-  assert.deepEqual(native.sent, ['too early', 'ready']);
-  socket.close();
-  assert.equal(native.readyState, FakeWebSocket.CLOSING);
-  assert.doesNotThrow(() => socket.send('after close requested'));
+    resetFake();
+    const socket = new WebSocketShim(TARGET_URL);
+    const native = latestSocket();
+    assert.doesNotThrow(() => socket.send('too early'));
+    assert.deepEqual(native.sent, []);
+    native.open();
+    assert.deepEqual(native.sent, ['too early']);
+    socket.send('ready');
+    assert.deepEqual(native.sent, ['too early', 'ready']);
+    socket.close();
+    assert.equal(native.readyState, FakeWebSocket.CLOSING);
+    assert.doesNotThrow(() => socket.send('after close requested'));
 });
 
 // Every other WebSocket on the page must keep the native contract exactly, since
 // only the detection socket is rerouted. Queuing here would silently change the
 // timing of unrelated code.
 test('a non-target socket keeps the native CONNECTING throw', () => {
-  resetFake();
-  const socket = new WebSocketShim('wss://example.com/ordinary');
-  const native = latestSocket();
+    resetFake();
+    const socket = new WebSocketShim('wss://example.com/ordinary');
+    const native = latestSocket();
 
-  assert.throws(
-    () => socket.send('too early'),
-    error => error.name === 'InvalidStateError'
-  );
-  assert.deepEqual(native.sent, []);
+    assert.throws(
+        () => socket.send('too early'),
+        error => error.name === 'InvalidStateError'
+    );
+    assert.deepEqual(native.sent, []);
 
-  native.open();
-  socket.send('ready');
-  assert.deepEqual(native.sent, ['ready']);
+    native.open();
+    socket.send('ready');
+    assert.deepEqual(native.sent, ['ready']);
 });
 
 // The page-side race: socket A opens and its handler sends on `this.websock`,
@@ -355,73 +355,73 @@ test('a non-target socket keeps the native CONNECTING throw', () => {
 // exactly that) would leave a retried request waiting for a reply the server was
 // never asked for.
 test('a stale open handler sending into a connecting socket delivers every send', () => {
-  resetFake();
-  const first = new WebSocketShim(TARGET_URL);
-  const socketA = latestSocket();
-  const second = new WebSocketShim(TARGET_URL);
-  const socketB = latestSocket();
+    resetFake();
+    const first = new WebSocketShim(TARGET_URL);
+    const socketA = latestSocket();
+    const second = new WebSocketShim(TARGET_URL);
+    const socketB = latestSocket();
 
-  // A opens first; the page's handler reads the newer socket B.
-  socketA.open();
-  assert.doesNotThrow(() => second.send(JSON.stringify({ fp: 'handshake' })));
+    // A opens first; the page's handler reads the newer socket B.
+    socketA.open();
+    assert.doesNotThrow(() => second.send(JSON.stringify({ fp: 'handshake' })));
 
-  // B opens and flushes it, then its own open handler sends the same frame again.
-  socketB.open();
-  second.send(JSON.stringify({ fp: 'handshake' }));
+    // B opens and flushes it, then its own open handler sends the same frame again.
+    socketB.open();
+    second.send(JSON.stringify({ fp: 'handshake' }));
 
-  assert.deepEqual(socketB.sent.map(String), [
-    JSON.stringify({ fp: 'handshake' }),
-    JSON.stringify({ fp: 'handshake' })
-  ]);
-  assert.equal(first.readyState, 1);
+    assert.deepEqual(socketB.sent.map(String), [
+        JSON.stringify({ fp: 'handshake' }),
+        JSON.stringify({ fp: 'handshake' })
+    ]);
+    assert.equal(first.readyState, 1);
 });
 
 test('closing a connecting relay does not create a second socket', () => {
-  resetFake();
-  const socket = new WebSocketShim(TARGET_URL);
-  const relay = latestSocket();
-  let closes = 0;
-  socket.addEventListener('close', () => closes++);
-  socket.close();
-  relay.finishClose({ code: 1000, reason: '', wasClean: true });
-  assert.equal(FakeWebSocket.instances.length, 1);
-  assert.equal(closes, 1);
+    resetFake();
+    const socket = new WebSocketShim(TARGET_URL);
+    const relay = latestSocket();
+    let closes = 0;
+    socket.addEventListener('close', () => closes++);
+    socket.close();
+    relay.finishClose({ code: 1000, reason: '', wasClean: true });
+    assert.equal(FakeWebSocket.instances.length, 1);
+    assert.equal(closes, 1);
 });
 
 test('native close validation errors are preserved and do not suppress relay failure events', async () => {
-  resetFake();
-  const socket = new WebSocketShim(TARGET_URL);
-  const relay = latestSocket();
-  assert.throws(() => socket.close(1001), error => error.name === 'InvalidAccessError');
-  assert.throws(() => socket.close(3000, 'x'.repeat(124)), error => error.name === 'SyntaxError');
-  let errors = 0;
-  let closes = 0;
-  socket.addEventListener('error', () => errors++);
-  socket.addEventListener('close', () => closes++);
-  relay.fail();
-  assert.equal(FakeWebSocket.instances.length, 1);
-  await new Promise(resolve => setTimeout(resolve, 10));
-  assert.equal(errors, 1);
-  assert.equal(closes, 1);
+    resetFake();
+    const socket = new WebSocketShim(TARGET_URL);
+    const relay = latestSocket();
+    assert.throws(() => socket.close(1001), error => error.name === 'InvalidAccessError');
+    assert.throws(() => socket.close(3000, 'x'.repeat(124)), error => error.name === 'SyntaxError');
+    let errors = 0;
+    let closes = 0;
+    socket.addEventListener('error', () => errors++);
+    socket.addEventListener('close', () => closes++);
+    relay.fail();
+    assert.equal(FakeWebSocket.instances.length, 1);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(errors, 1);
+    assert.equal(closes, 1);
 });
 
 (async () => {
-  for (const { name, fn } of tests) {
-    try {
-      await fn();
-      results.push({ name, ok: true });
-      process.stdout.write(`  ok    ${name}\n`);
-    } catch (error) {
-      results.push({ name, ok: false, error });
-      process.stdout.write(`  FAIL  ${name}: ${error.stack || error}\n`);
+    for (const { name, fn } of tests) {
+        try {
+            await fn();
+            results.push({ name, ok: true });
+            process.stdout.write(`  ok    ${name}\n`);
+        } catch (error) {
+            results.push({ name, ok: false, error });
+            process.stdout.write(`  FAIL  ${name}: ${error.stack || error}\n`);
+        }
     }
-  }
 
-  const failed = results.filter(result => !result.ok);
-  if (failed.length) {
-    process.stderr.write(`\n${failed.length}/${results.length} shim semantic checks failed\n`);
-    process.exitCode = 1;
-  } else {
-    process.stdout.write(`\nPASS: ${results.length}/${results.length} shim semantic checks\n`);
-  }
+    const failed = results.filter(result => !result.ok);
+    if (failed.length) {
+        process.stderr.write(`\n${failed.length}/${results.length} shim semantic checks failed\n`);
+        process.exitCode = 1;
+    } else {
+        process.stdout.write(`\nPASS: ${results.length}/${results.length} shim semantic checks\n`);
+    }
 })();

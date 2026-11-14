@@ -116,7 +116,7 @@ check('unresolved section only lists proposals that are actually open', () => {
         { id: 'P1-11', file: 'src/content/auto.js', topic: 'state label fixed', verdict: 'adopted' }
     ];
     const lines = openIssueLines(entries).join('\n');
-    assert.match(lines, /当前有 1 项/);
+    assert.match(lines, /1 item\(s\) are agreed but not done/);
     assert.match(lines, /P1-9/);
     assert.doesNotMatch(lines, /P1-7/);
     assert.doesNotMatch(lines, /P1-11/);
@@ -126,7 +126,7 @@ check('unresolved section only lists proposals that are actually open', () => {
 check('unresolved section reports none when everything is resolved', () => {
     assert.deepEqual(openIssueLines([
         { id: 'P1-7', file: 'src/shim/index.js', topic: 'fixed', verdict: 'extended' }
-    ]), ['目前没有标记为“同意但未做”的事项。']);
+    ]), ['Nothing is marked agreed-but-not-done.']);
 });
 
 check('unresolved section lists all open issues with identifiers', () => {
@@ -134,9 +134,9 @@ check('unresolved section lists all open issues with identifiers', () => {
         { id: 'P1', file: 'a.js', topic: 'first', verdict: 'open' },
         { id: 'P2', file: 'b.js', topic: 'second', verdict: 'open' }
     ]).join('\n');
-    assert.match(lines, /当前有 2 项/);
-    assert.match(lines, /P1 `a\.js`：first/);
-    assert.match(lines, /P2 `b\.js`：second/);
+    assert.match(lines, /2 item\(s\) are agreed but not done/);
+    assert.match(lines, /P1 `a\.js`: first/);
+    assert.match(lines, /P2 `b\.js`: second/);
 });
 
 check('file probes do not borrow files from the working tree when evaluating the patch', () => {

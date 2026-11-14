@@ -105,7 +105,7 @@ const fail = text => {
         relay ? ok('the relay answers, so a rotation can complete') : fail('the relay is not answering');
 
         // Make the page read the way it does when the allowance is actually gone: the control's
-        // counter wording is replaced, so no "今日剩余N次" remains anywhere. Adding the exhausted
+        // counter wording is replaced, so no remaining-count text survives anywhere. Adding the exhausted
         // sentence while a positive counter is still on screen is correctly treated as stale, so
         // that is not a faithful simulation.
         const marked = await pageConn.send('Runtime.evaluate', {

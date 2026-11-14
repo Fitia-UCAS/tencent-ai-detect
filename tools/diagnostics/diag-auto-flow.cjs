@@ -3,7 +3,7 @@
 //
 // Two page details had to be discovered before this could work: the page takes
 // ~15s to render its editor, and the text box does not exist while an example is
-// loaded — it is a rendered segment view until 清空 is pressed, which is what makes
+// loaded - it is a rendered segment view until the clear button is pressed, which is what makes
 // the real textarea appear. Both were found by measuring, not by guessing.
 const path = require('node:path');
 const fs = require('node:fs');
@@ -154,7 +154,7 @@ async function clickText(page, label) {
             return;
         }
 
-        process.stdout.write('clicked 立即检测\n');
+        process.stdout.write('clicked detect\n');
         await sleep(6000);
 
         // Report the captcha surface so the remaining manual step is explicit.
@@ -174,7 +174,7 @@ async function clickText(page, label) {
         process.stdout.write(`screenshot: ${file}\n`);
 
         // Keep the window alive long enough for a human to finish the slider.
-        process.stdout.write('\n完成后可关闭窗口；等待 90 秒以记录验证码之后的帧...\n');
+        process.stdout.write('\nThe window can be closed when done; waiting 90s to record frames after the challenge...\n');
         await sleep(90000);
     } finally {
         await session.cleanup();

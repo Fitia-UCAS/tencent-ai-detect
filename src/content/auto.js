@@ -1,7 +1,7 @@
 // Driving the site without the user touching it.
 //
 // Everything else in this extension maintains the allowance; none of it starts a detection. The
-// user still had to paste text and press 立即检测 for every run, which is the part that made the
+// user still had to paste text and press the detect button for every run, which is the part that
 // flow feel manual no matter how well the rotation worked.
 //
 // Two things stand in the way of automating that, and both are handled here:

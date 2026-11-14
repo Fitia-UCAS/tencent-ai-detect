@@ -15,34 +15,34 @@ const resolved = [];
 const missing = [];
 
 for (const match of html.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)) {
-  resolved.push({ kind: 'script', ref: match[1] });
+    resolved.push({ kind: 'script', ref: match[1] });
 }
 for (const match of html.matchAll(/<link[^>]*\bhref="([^"]+)"/g)) {
-  resolved.push({ kind: 'stylesheet', ref: match[1] });
+    resolved.push({ kind: 'stylesheet', ref: match[1] });
 }
 for (const match of html.matchAll(/<img[^>]*\bsrc="([^"]+)"/g)) {
-  resolved.push({ kind: 'image', ref: match[1] });
+    resolved.push({ kind: 'image', ref: match[1] });
 }
 
 for (const entry of resolved) {
-  if (/^(https?:|data:|chrome-extension:)/.test(entry.ref)) continue;
-  const target = path.resolve(panelDir, entry.ref);
-  if (!fs.existsSync(target)) missing.push(`${entry.kind} "${entry.ref}"`);
+    if (/^(https?:|data:|chrome-extension:)/.test(entry.ref)) continue;
+    const target = path.resolve(panelDir, entry.ref);
+    if (!fs.existsSync(target)) missing.push(`${entry.kind} "${entry.ref}"`);
 }
 
 assert.deepEqual(missing, [], `side panel references missing files: ${missing.join(', ')}`);
 
 // The panel must actually load a script, otherwise its buttons would be inert markup.
 assert.ok(
-  resolved.some(entry => entry.kind === 'script'),
-  'side panel must load a script'
+    resolved.some(entry => entry.kind === 'script'),
+    'side panel must load a script'
 );
 
 // Inline styles belong in the stylesheet: the document is markup, not a place to park CSS.
 assert.ok(!/<style[\s>]/.test(html), 'side panel must not embed a <style> block');
 assert.ok(
-  resolved.some(entry => entry.kind === 'stylesheet'),
-  'side panel must link an external stylesheet'
+    resolved.some(entry => entry.kind === 'stylesheet'),
+    'side panel must link an external stylesheet'
 );
 
 const css = fs.readFileSync(path.join(panelDir, 'styles.css'), 'utf8');
@@ -57,8 +57,8 @@ assert.ok(fs.existsSync(iconPath) || !html.includes('icon.png'), 'declared icon 
 // silently disables the only place that explains why nothing works.
 const script = fs.readFileSync(path.join(panelDir, 'index.js'), 'utf8');
 for (const id of ['host-alert', 'host-alert-detail']) {
-  assert.ok(html.includes(`id="${id}"`), `markup must define #${id}`);
-  assert.ok(script.includes(`getElementById('${id}')`), `script must wire #${id}`);
+    assert.ok(html.includes(`id="${id}"`), `markup must define #${id}`);
+    assert.ok(script.includes(`getElementById('${id}')`), `script must wire #${id}`);
 }
 assert.ok(css.includes('.host-alert'), 'stylesheet must style the host alert');
 

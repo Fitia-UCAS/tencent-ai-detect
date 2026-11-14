@@ -296,157 +296,156 @@ const PROPOSALS = [
     {
         id: 'P0-1',
         file: 'src/content/index.js',
-        topic: 'observe 改为观察 document，而不是 documentElement',
+        topic: 'observe the document, not documentElement',
         verdict: 'adopted',
-        claim: '审查方的判断：document_start 可能在 <html> 出现之前执行，observe() 会抛异常，后面整段初始化都不会跑。这个我没看到，已照改。',
+        claim: 'The review found this and I had not: document_start can run before <html> exists, observe() then throws, and the rest of initialisation never runs. Taken as offered.',
         probe: { must: [/observer\.observe\(document,/] }
     },
     {
         id: 'P0-2',
         file: 'src/content/auto.js',
-        topic: 'restoreDraft 不能在编辑器确认接收之前删掉备份',
+        topic: 'restoreDraft must not delete the backup before the editor accepts it',
         verdict: 'adopted',
-        claim: '审查方的判断：原实现先 removeItem 再 writeEditor，编辑器尚未渲染时写入返回 false，但唯一的草稿副本已经删了。轮换刷新一次就吃掉用户文本。已照改。',
+        claim: 'The old order was removeItem then writeEditor, so when the editor had not rendered yet the write returned false but the only copy of the draft was already gone. One rotation ate the text. Taken as offered.',
         probe: { must: [/if \(!ZQ\.writeEditor\(text\)\) return false;/] }
     },
     {
         id: 'P0-3',
         file: 'src/content/auto.js',
-        topic: '编辑器已有内容时，整个页面加载期间都不再复活旧草稿',
+        topic: 'once the editor has content, never revive the old draft during that load',
         verdict: 'adopted',
-        claim: '审查方的判断：用户清空刚输入的新文本后，后面的定时器仍可能把旧草稿写回来。原实现没有这个判断，已照改。',
+        claim: 'A later timer could still write the old draft back after the user cleared what they had just typed. There was no such guard. Taken as offered.',
         probe: { must: [/draftRestoreConflict/] }
     },
     {
         id: 'P0-4',
         file: 'src/content/auto.js',
-        topic: 'saveDraft 存原始文本，不用会 trim 的 readEditor()',
+        topic: 'saveDraft stores the raw text, not the trimmed readEditor()',
         verdict: 'adopted',
-        claim: '审查方的判断：readEditor() 会 trim，存进草稿的文本丢了首尾空白。已照改。',
+        claim: 'readEditor() trims, so the stored draft lost its leading and trailing whitespace. Taken as offered.',
         probe: { must: [/editor \? \(editor\.textContent \|\| ''\) : ''/] }
     },
     {
         id: 'P1-1',
         file: 'src/background/identity.js',
-        topic: 'apply() 在 updateDynamicRules 完成前就报成功',
+        topic: 'apply() reported success before updateDynamicRules finished',
         verdict: 'extended',
-        claim: '审查方标了高严重度，但自己的修改建议表里没有这一项。我们补完了：回复现在等到 getDynamicRules() 读回三条规则、逐个核对地址一致才发出，更新操作串行化（慢的早期更新无法覆盖后到的），并用 sync() 在 worker 重启后从浏览器实际持有的规则重建状态。sync() 后来也进了同一条队列，规则调用另加了超时，避免一次不回调把队列永久堵死。',
+        claim: 'The review rated this high and then left it out of its own suggestion table. Finished here: the reply waits for getDynamicRules() to read the three rules back and check they carry the same address, updates are serialized so a slow early one cannot overwrite a later one, and sync() rebuilds state from the rules the browser actually holds after a worker restart. sync() later joined the same queue, and rule calls carry a timeout so one call that never answers cannot block the queue forever.',
         probe: { must: [/addressFromRules/, /updateDynamicRulesAsync/, /enqueue/, /withTimeout/] }
     },
     {
         id: 'P1-2',
         file: 'src/background/messages.js',
-        topic: 'setIdentity 不能为没核验过的更新回 success',
+        topic: 'setIdentity must not answer success for an update it never verified',
         verdict: 'extended',
-        claim: '审查方的判断：消息处理器在更新完成前就可能返回成功。现在改成等读回核验之后再回，失败回 ignored 或 error，不再回 success。',
+        claim: 'The handler could return success before the update finished. It now waits for the read-back and answers ignored or error on failure, never success.',
         probe: { must: [/\.then\(applied =>/] }
     },
     {
         id: 'P1-3',
         file: 'src/content/auto.js',
-        topic: '规则被拒时应当停止点击，而不是只打日志',
+        topic: 'a refused rule should stop the click, not just log',
         verdict: 'extended',
-        claim: '审查方没提这一条，是 P1-2 的直接后果：identity.js 现在记录后台是否确认了规则，确认被拒时 autoDetect() 拒绝点击 —— 那个地址组合每次都会被服务端拒，点下去只是白烧一个地址。悬而未决时不拦，否则安装稍慢就会让自动化永久停摆。',
+        claim: 'Not raised by the review, but the direct consequence of P1-2: identity.js now records whether the background confirmed the rule, and autoDetect() refuses to click when it was refused, because that address pairing is rejected every time and pressing only burns an address. Unconfirmed does not block, or a slow install would stall the automation for good.',
         probe: { must: [/identityConfirmed === false/] }
     },
     {
         id: 'P1-4',
         file: 'src/content/auto.js',
-        topic: '按下按钮应记作"尝试"，而不是"已完成检测"',
+        topic: 'a press is an attempt, not a finished detection',
         verdict: 'extended',
-        claim: '审查方的判断：存的就是文本本身，等于宣称检测完成，实际只发生了一次点击。现在记录观察到的状态：submitted-unconfirmed / completed / blocked，并附带按下时的额度快照 —— 站点计数器下降是唯一能证明服务端受理过的信号。这几种状态都不允许自动重按。',
+        claim: 'The old record stored the text itself, which claimed a detection that had only been a click. It now stores what was observed: submitted-unconfirmed, quota-decrement-observed, blocked, or unknown, with the quota snapshot taken at the press. None of those states allows an automatic re-press. A later round renamed completed to quota-decrement-observed, because a counter drop cannot be attributed to this request.',
         probe: { must: [/submitted-unconfirmed/, /attemptState/, /q: currentQuota\(\)/] }
     },
     {
         id: 'P1-5',
         file: 'src/content/auto.js',
-        topic: 'fingerprint() 改为只归一化换行符与 nbsp',
+        topic: 'fingerprint() should normalize only newlines and nbsp',
         verdict: 'rejected',
-        claim: '驳回。实测的站点重渲染会把换行变成「空格 + CRLF + 空格」；只统一换行符，后面用于缩进的空格还在，两个指纹依然不同，草稿又会被判为新文本再点一次、这次没有票据。删除全部空白覆盖了实测形态；把「a b」和「ab」归为同一指纹只是少检一次重复内容。审查方后来也撤回了这条。',
+        claim: 'Rejected. A measured re-render turns a newline into space + CRLF + space; normalizing only the newline leaves the indentation spaces, the two fingerprints still differ, and the draft is pressed again with no ticket. Stripping all whitespace covers the measured shape, and collapsing "a b" with "ab" merely means one duplicate is missed. The review withdrew this one later.',
         probe: { must: [/replace\(\/[^a-zA-Z]s\+/], mustNot: [/\u00a0/] }
     },
     {
         id: 'P1-6',
         file: 'src/background/identity.js',
-        topic: 'COVERED_RESOURCE_TYPES 的注释声称"除 main_frame 外全覆盖"不准确',
+        topic: 'the COVERED_RESOURCE_TYPES comment claimed to cover everything but main_frame',
         verdict: 'adopted',
-        claim: '采纳了它建议的窄的那一半：注释改成说明这份列表覆盖的是本流程实际用到的类型，不再声称穷尽。webtransport / webbundle 没有加进规则 —— 这条链路不用这两个协议，加上只是扩大改动面。',
+        claim: 'Took the narrower half it suggested: the comment now says the list covers the resource types this flow uses and no longer claims to be exhaustive. webtransport and webbundle were not added, because nothing here uses those protocols and adding them would widen the blast radius for no gain.',
         probe: { must: [/webtransport and webbundle are also absent/] }
     },
     {
         id: 'P1-7',
         file: 'src/shim/index.js',
-        topic: '连不上就静默切回原始地址，掩盖了传输失败',
+        topic: 'silently falling back to the original address hid the transport failure',
         verdict: 'extended',
-        claim: '由交付包实现：_fallback() 被删除，relay 在 open 之前失败时走 _failRelay() → _fail()，只派发一次终态 error 与 close，不再切回原始地址。我们在此基础上补了闭环 —— fail-closed 之后页面手里是一个死 socket，页面自己不会开第二个，所以 shim 用 zq:relay-failed 事件通知内容脚本：relay 真的挂了就走轮换路径（请求重连并自身重试），relay 还活着则每次页面加载只允许一次 reload，之后只上报，避免死循环。',
+        claim: 'Delivered in the review pack: _fallback() is gone, and a relay failure before open goes through _failRelay() then _fail(), emitting one terminal error and close instead of switching to the origin. Added the loop that closes it off: after failing closed the page holds a dead socket and never opens another, so the shim announces zq:relay-failed. A relay that is really down goes to the rotation path; a relay that answers gets one reload per load and then only reporting, so a persistent socket fault cannot become a reload loop.',
         probe: { must: [/_failRelay\(\)/, /zq:relay-failed/] }
     },
     {
         id: 'P1-7b',
         file: 'src/content/engine.js',
-        topic: 'fail-closed 之后要有闭环，否则页面拿着死 socket 永远不恢复',
+        topic: 'failing closed needs a recovery path, or the page sits on a dead socket',
         verdict: 'extended',
-        claim: '审查方没提这一条，是 P1-7 的直接后果。删掉 fallback 是对的，但页面自己不会重开 socket，relay 恢复后也只会一直瘫着。engine.js 现在监听 zq:relay-failed：relay 不在就交给轮换路径（请求重连 + 自身重试，恢复后 reload）；relay 还在则每次页面加载只允许一次 reload 然后只上报，避免变成刷新循环。',
+        claim: 'Not raised by the review, but the direct consequence of P1-7. Removing the fallback was right, but the page never reopens the socket, so it stays dead even after the relay returns. engine.js now listens for zq:relay-failed: a relay that is down goes to the rotation path, a relay that is up gets one reload per load and then only reporting.',
         probe: { must: [/handleTransportFailure/, /transportRetried/] }
     },
     {
         id: 'P1-8',
         file: 'src/content/engine.js',
-        topic: '额度耗尽时应当停止任务，而不是继续轮换',
+        topic: 'stop the run when the allowance is exhausted instead of rotating',
         verdict: 'rejected',
-        claim: '在这个项目里驳回。轮换就是被要求的行为：这个扩展存在的意义就是不让用户点任何按钮地保持额度可用。审查方的替代方案适合普通自动化，不适合这一个。',
+        claim: 'Rejected for this project. Rotating is the requested behaviour: this extension exists to keep the allowance usable without the user pressing anything. The suggested alternative suits ordinary automation, not this one.',
         probe: { must: [/ZQ\.rotate\(reason\);/] }
     },
     {
         id: 'P1-9',
         file: 'src/background/identity.js',
-        topic: '三条动态规则是全局的，不按标签页隔离',
+        topic: 'the three dynamic rules are global and not isolated per tab',
         verdict: 'open',
-        claim: '同意。规则确实没有 tab 条件，同时开两个检测页会互相覆盖地址。代码没改：这个扩展是单标签页使用的，做标签页级规则还要配 sessionRuleIds 和标签页生命周期清理。限制本身写进了 README 的「已知限制」，包括将来要支持多标签页需要 updateSessionRules + tabIds 并跟踪标签页生命周期。',
+        claim: 'Agreed. The rules carry no tab condition, and two detection pages overwrite the address each other wrote. Code unchanged: this extension is used with one detection tab, and per-tab rules would need sessionRuleIds plus tab lifecycle cleanup. The limitation itself is stated in the delivery note, with what multi-tab support would require: updateSessionRules, tabIds, and tracking tab lifecycle.',
         probe: { must: [/IDENTITY_RULE_ID/], mustNot: [/tabIds/] }
     },
     {
         id: 'P2-1',
         file: 'tests/unit/',
-        topic: '补 DOM 未就绪、存储失败、重复提交、双标签页的回归测试',
+        topic: 'add regressions for a DOM that is not ready, storage failure, duplicate submission, two tabs',
         verdict: 'extended',
-        claim: '四条里覆盖了三条：test-document-start.cjs、test-draft-safety.cjs（九个存储与写入失败场景）、以及 test-auto-detect.cjs 里的提交状态用例。双标签页仍无覆盖，与 P1-9 一致。',
+        claim: 'Three of the four are covered: test-document-start.cjs, test-draft-safety.cjs (nine storage and write failure cases), and the submission state cases in test-auto-detect.cjs. Two tabs remain uncovered, consistent with P1-9.',
         probe: { files: ['tests/unit/test-document-start.cjs', 'tests/unit/test-draft-safety.cjs'] }
     },
     {
         id: 'P1-10',
         file: 'src/content/engine.js',
-        topic: 'localStorage 读写失败时，跨页面 reload 预算失效',
+        topic: 'the cross-load reload budget breaks when storage reads or writes fail',
         verdict: 'extended',
-        claim: '审查方发现了这条，修的是故障路径（读写异常、记录损坏、时间戳异常一律 fail-closed）。但预算仍放在网站 origin 的 localStorage 里 —— 那一份是页面自己能清的，所以"扩展控制"这半个要求没做到。已迁到 chrome.storage.local，读写失败与回读不一致同样 fail-closed。',
+        claim: 'The review found this and fixed the failure paths: unreadable, unpersisted, corrupt, and future-dated records all fail closed. But the budget still lived in the site origin storage, which the page itself can clear, so the extension-controlled half of the requirement was not met. Moved to extension storage, with the same fail-closed behaviour on a failed read, a failed write, and a read-back that does not match.',
         probe: { must: [/chrome\.storage\.local/, /validBudget/, /recordTransportReload/], mustNot: [/localStorage\.setItem\(ZQ\.TRANSPORT_RELOAD_KEY/] }
     },
     {
         id: 'P1-11',
         file: 'src/content/auto.js',
-        topic: '计数器下降不能证明本次检测完成，不该叫 completed',
+        topic: 'a counter drop does not prove this detection completed',
         verdict: 'adopted',
-        claim: '审查方的判断：页面显示的额度下降无法归因到这一次请求，没有请求 ID 就没有因果关系。这个判据是我自己找的，也确实撑不住，已改成 quota-decrement-observed，旧记录按观察态读，重复提交防护不变。',
+        claim: 'The judgement holds: a drop in the displayed allowance cannot be attributed to this request, and without a request id there is no causal link. That criterion was mine and it does not hold up. Renamed to quota-decrement-observed, legacy records are read as an observation, and the duplicate-submission guard is unchanged.',
         probe: { must: [/quota-decrement-observed/], mustNot: [/settled = 'completed'/] }
     },
     {
         id: 'P1-12',
         file: 'src/content/engine.js',
-        topic: '站点 SDK 是否会自己重连，没验证前不该再叠加一套 reload',
+        topic: 'whether the site SDK reconnects on its own, before adding a second recovery',
         verdict: 'extended',
-        claim: '审查方要求先被动观测。已经实测（tools/diagnostics/diag-sdk-reconnect.cjs，不杀本机 relay）：页面加载时会自己建一个 socket，把它关掉之后 30 秒内没有出现第二个，页面也没有自行刷新。所以没有 SDK 重连可依赖，reload 是唯一的恢复手段，保留。',
+        claim: 'The review asked for passive observation first. Measured with tools/diagnostics/diag-sdk-reconnect.cjs without touching the local relay: the page creates one socket on load, and after closing it no second socket appeared within 30 seconds, nor did the page reload itself. So there is no SDK reconnect to rely on, and the reload is the only recovery there is. Kept.',
         probe: { files: ['tools/diagnostics/diag-sdk-reconnect.cjs'] }
     },
     {
         id: 'P1-13',
         file: 'src/background/identity.js',
-        topic: 'sync() 与 apply() 没有统一串行化',
+        topic: 'sync() and apply() were not serialized against each other',
         verdict: 'adopted',
-        claim: '审查方的判断成立：sync() 在队列外直接读规则，worker 重启时若排在一次 apply 之后完成，会把旧地址写回 current，下一次发布就会跳过一次本该做的更新。已让 sync() 进同一条队列，并给规则调用加超时，避免一次不回调把队列永久堵死。',
+        claim: 'The judgement holds: sync() read the rules outside the queue, so a worker restart completing after an apply would write the previous address back into current, and the next publish would skip an update that was needed. sync() now takes the same turn, and rule calls time out so one call that never answers cannot block the queue.',
         probe: { must: [/function enqueue/, /withTimeout/, /sync\(\) \{\s*return enqueue/] }
     }
 ];
-
 function runProbe(proposal, text, fileSet) {
     const probe = proposal.probe || {};
 
@@ -490,12 +489,12 @@ function probeFileSets(proposals, patchFiles, existsAtBase, existsWorking) {
 // passed. New or resolved proposals now update the section without a second manual edit.
 function openIssueLines(proposals) {
     const open = proposals.filter(proposal => proposal.verdict === 'open');
-    if (!open.length) return ['目前没有标记为“同意但未做”的事项。'];
+    if (!open.length) return ['Nothing is marked agreed-but-not-done.'];
 
     return [
-        `当前有 ${open.length} 项标记为“同意但未做”：`,
+        `${open.length} item(s) are agreed but not done:`,
         '',
-        ...open.map(proposal => `- ${proposal.id} \`${proposal.file}\`：${proposal.topic}`)
+        ...open.map(proposal => `- ${proposal.id} \`${proposal.file}\`: ${proposal.topic}`)
     ];
 }
 
@@ -505,7 +504,7 @@ function main() {
     const patchPath = findPatch(arg('patch'));
     const base = arg('base', '8e39d72');
     const head = git(['rev-parse', '--short', 'HEAD']).trim();
-    const out = arg('out', path.join(os.homedir(), 'Desktop', 'tencent-ai-detect-比对报告.md'));
+    const out = arg('out', path.join(os.homedir(), 'Desktop', 'tencent-ai-detect-review-comparison.md'));
 
     const patchFiles = parsePatch(fs.readFileSync(patchPath, 'utf8'));
     if (!patchFiles.length) throw new Error('the patch has no file sections: ' + patchPath);
@@ -588,110 +587,109 @@ function main() {
 
     const commits = git(['log', '--oneline', base + '..HEAD']).split('\n').filter(Boolean);
 
-    const md = [];
-    md.push('# 外部审查与本地实现的对比');
+    md.push('# External review vs what this repository did');
     md.push('');
-    md.push('这份报告由 `tools/compare-review.cjs` 生成，可以随时重跑：脚本从 base 提交取出被改文件的原内容，在内存里重放外部补丁的每个 hunk 得到"审查方改完的样子"，再与当前工作树逐文件、逐提议对比。工作树不会被改动。');
+    md.push('Generated by `tools/compare-review.cjs` and safe to re-run: it reads the base commit, replays each hunk of the external patch in memory to reconstruct what the review produced, then compares that against the working tree, per file and per proposal. The working tree is never modified.');
     md.push('');
-    md.push('| 项目 | 值 |');
+    md.push('| Field | Value |');
     md.push('|---|---|');
-    md.push('| 对比基准（补丁的 base） | `' + base + '` |');
-    md.push('| 补丁文件 | `' + path.basename(patchPath) + '` |');
-    md.push('| 当前 HEAD | `' + head + '` |');
-    md.push('| 补丁涉及文件 | ' + patchFiles.length + ' |');
-    md.push('| 我们还改了、补丁没提的文件 | ' + extra.length + ' |');
-    md.push('| hunk 重放时的上下文不匹配行数 | ' + drift + (drift ? '（补丁可能不是切在这个 base 上）' : '（补丁与 base 一致）') + ' |');
-    md.push('| hunk 结构错误 | ' + hunkErrors.length + ' |');
+    md.push('| Base the patch was cut against | `' + base + '` |');
+    md.push('| Patch file | `' + path.basename(patchPath) + '` |');
+    md.push('| Current HEAD | `' + head + '` |');
+    md.push('| Files in the patch | ' + patchFiles.length + ' |');
+    md.push('| Files we changed that the patch never mentions | ' + extra.length + ' |');
+    md.push('| Lines of context that did not match while replaying | ' + drift + (drift ? ' (the patch may not be cut against this base)' : ' (patch matches the base)') + ' |');
+    md.push('| Hunk structure errors | ' + hunkErrors.length + ' |');
     md.push('');
 
     if (hunkErrors.length) {
-        md.push('### Hunk 结构校验失败');
+        md.push('### Hunk structure validation failed');
         md.push('');
         for (const error of hunkErrors) md.push('- ' + error);
         md.push('');
     }
 
-    md.push('## 一、文件级对比');
+    md.push('## 1. Per-file comparison');
     md.push('');
-    md.push('`identical` = 我们和审查方改出了同样的内容；`diverged` = 双方都改了这个文件但结果不同；`not applied` = 我们没动；`we only` = 审查方没动我们动了。');
+    md.push('`identical` = both sides produced the same content; `diverged` = both changed the file with different results; `not applied` = only the review changed it; `we only` = only this repository changed it.');
     md.push('');
-    md.push('| 文件 | 状态 | 审查方 ± | 我们 ± |');
+    md.push('| File | State | Review +/- | Ours +/- |');
     md.push('|---|---|---:|---:|');
     for (const row of rows) {
-        md.push('| `' + row.file + '` | ' + row.state + ' | +' + row.theirChange.added + ' / −' + row.theirChange.removed +
-            ' | +' + row.ourChange.added + ' / −' + row.ourChange.removed + ' |');
+        md.push('| `' + row.file + '` | ' + row.state + ' | +' + row.theirChange.added + ' / -' + row.theirChange.removed +
+            ' | +' + row.ourChange.added + ' / -' + row.ourChange.removed + ' |');
     }
     md.push('');
 
     if (extra.length) {
-        md.push('补丁之外我们另外改的文件：');
+        md.push('Files this repository changed that the patch never touches:');
         md.push('');
         for (const file of extra) md.push('- `' + file + '`');
         md.push('');
     }
 
-    md.push('## 二、逐条提议的裁定');
+    md.push('## 2. Verdict per proposal');
     md.push('');
-    md.push('每条裁定都挂着一个探针：在"审查方改完的样子"和"我们的代码"里各跑一次。探针失败会打印出来，所以这张表可以被证明是错的，而不是只凭我这么说。');
+    md.push('Every verdict carries a probe, run against both the reconstructed review state and this repository. A failing probe is printed rather than described away, so the table can be shown to be wrong instead of merely asserted.');
     md.push('');
     const label = {
-        adopted: '采纳',
-        extended: '采纳并推进',
-        rejected: '驳回',
-        open: '同意但未做'
+        adopted: 'adopted',
+        extended: 'adopted, taken further',
+        rejected: 'rejected',
+        open: 'agreed, not done'
     };
-    md.push('| # | 文件 | 提议 | 裁定 | 我们的代码通过探针 | 审查方补丁通过探针 |');
+    md.push('| # | File | Proposal | Verdict | Our code passes probe | Review patch passes probe |');
     md.push('|---|---|---|---|---|---|');
     for (const result of probeResults) {
         const p = result.proposal;
         md.push('| ' + p.id + ' | `' + p.file + '` | ' + p.topic + ' | ' + label[p.verdict] +
-            ' | ' + (result.ourFailure ? 'FAIL — ' + result.ourFailure : 'PASS') +
-            ' | ' + (result.theirFailure ? '未包含（' + result.theirFailure + '）' : 'PASS') + ' |');
+            ' | ' + (result.ourFailure ? 'FAIL - ' + result.ourFailure : 'PASS') +
+            ' | ' + (result.theirFailure ? 'not included (' + result.theirFailure + ')' : 'PASS') + ' |');
     }
     md.push('');
 
-    md.push('## 三、每条的理由');
+    md.push('## 3. Reasoning per proposal');
     md.push('');
     for (const result of probeResults) {
         const p = result.proposal;
-        md.push('### ' + p.id + '　' + p.topic);
+        md.push('### ' + p.id + ' - ' + p.topic);
         md.push('');
-        md.push('裁定：**' + label[p.verdict] + '**');
+        md.push('Verdict: **' + label[p.verdict] + '**');
         md.push('');
         md.push(p.claim);
         md.push('');
     }
 
     const failures = probeResults.filter(result => result.ourFailure);
-    md.push('## 四、我们自己跑探针的结果');
+    md.push('## 4. Probe results against our own code');
     md.push('');
     if (failures.length) {
-        md.push('有 ' + failures.length + ' 条没有通过，说明这张表和代码不一致，需要先修代码或修表：');
+        md.push(failures.length + ' probe(s) did not pass, which means this table and the code disagree. Fix the code or fix the table before handing this over:');
         md.push('');
         for (const result of failures) {
-            md.push('- ' + result.proposal.id + ' `' + result.proposal.file + '`：' + result.ourFailure);
+            md.push('- ' + result.proposal.id + ' `' + result.proposal.file + '`: ' + result.ourFailure);
         }
     } else {
-        md.push('全部 ' + probeResults.length + ' 条探针通过：表里每一句关于"我们做了什么"的说法，都能在代码里找到对应物。');
+        md.push('All ' + probeResults.length + ' probes pass: every claim in this report about what we did has a corresponding construct in the code.');
     }
     md.push('');
 
-    md.push('## 五、仍未解决的部分');
+    md.push('## 5. Still unresolved');
     md.push('');
     md.push(...openIssueLines(PROPOSALS));
     md.push('');
 
-    md.push('## 六、附：每个有分歧的文件的实际差异');
+    md.push('## 6. Actual differences for every file that diverged');
     md.push('');
-    md.push('左边是审查方补丁后的样子，右边是我们现在的代码。');
+    md.push('Left is the review patch applied; right is this repository as it stands.');
     md.push('');
     for (const row of rows) {
         if (row.state === 'identical') continue;
-        md.push('### `' + row.file + '`　' + row.state);
+        md.push('### `' + row.file + '` - ' + row.state);
         md.push('');
         const diff = unified(row.theirLines, row.ourLines, row.file);
         if (!diff.trim()) {
-            md.push('（无差异）');
+            md.push('(no difference)');
         } else {
             md.push('```diff');
             md.push(diff.trimEnd());
@@ -701,7 +699,7 @@ function main() {
     }
 
     if (commits.length) {
-        md.push('## 七、base 之后的提交');
+        md.push('## 7. Commits after the base');
         md.push('');
         md.push('```');
         for (const line of commits) md.push(line);

@@ -8,8 +8,8 @@ const { spawnSync } = require('node:child_process');
 const target = path.join(__dirname, 'test-content-context.cjs');
 const sentinel = 'AUDIT_UNHANDLED_REJECTION_SENTINEL';
 const injectedScript = `
-  process.nextTick(() => Promise.reject(new Error(${JSON.stringify(sentinel)})));
-  require(${JSON.stringify(target)});
+    process.nextTick(() => Promise.reject(new Error(${JSON.stringify(sentinel)})));
+    require(${JSON.stringify(target)});
 `;
 
 const result = spawnSync(process.execPath, ['-e', injectedScript], {

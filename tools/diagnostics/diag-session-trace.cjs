@@ -214,7 +214,7 @@ async function waitForVueDetectionComponent(page, timeoutMs = 30000) {
                 const { x, y } = JSON.parse(spot.result.value);
                 await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
                 await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
-                process.stdout.write(`clicked 立即检测 at ${x},${y}\n`);
+                process.stdout.write(`clicked detect at ${x},${y}\n`);
             } else {
                 process.stdout.write('detect button not found\n');
             }

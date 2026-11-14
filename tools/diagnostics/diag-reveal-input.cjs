@@ -34,7 +34,7 @@ const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
 
         process.stdout.write('before clear: ' + (await probe()).result.value + '\n');
 
-        // Click 清空 the way a user would: a trusted hit on its centre.
+        // Click the clear control the way a user would: a trusted hit on its centre.
         const spot = await page.send('Runtime.evaluate', {
             expression: `(() => {
                 const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').trim() === '清空');
@@ -53,7 +53,7 @@ const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
         const { x, y } = JSON.parse(spot.result.value);
         await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
         await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
-        process.stdout.write(`clicked 清空 at ${x},${y}\n`);
+        process.stdout.write(`clicked clear at ${x},${y}\n`);
         await sleep(2000);
 
         process.stdout.write('after clear : ' + (await probe()).result.value + '\n');

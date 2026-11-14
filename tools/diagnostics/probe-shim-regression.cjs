@@ -5,12 +5,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 class FakeWS extends EventTarget {
-  static CONNECTING=0;static OPEN=1;static CLOSING=2;static CLOSED=3;
-  static instances=[];
-  constructor(url){super(); this.url=url;this.readyState=0;this.binaryType='blob';this.sent=[]; FakeWS.instances.push(this);}
-  open(){this.readyState=1;this.onopen?.(new Event('open'));}
-  send(x){if(this.readyState===0)throw new DOMException('connecting','InvalidStateError'); if(this.readyState===1)this.sent.push(x);}
-  close(){this.readyState=3;}
+    static CONNECTING=0;static OPEN=1;static CLOSING=2;static CLOSED=3;
+    static instances=[];
+    constructor(url){super(); this.url=url;this.readyState=0;this.binaryType='blob';this.sent=[]; FakeWS.instances.push(this);}
+    open(){this.readyState=1;this.onopen?.(new Event('open'));}
+    send(x){if(this.readyState===0)throw new DOMException('connecting','InvalidStateError'); if(this.readyState===1)this.sent.push(x);}
+    close(){this.readyState=3;}
 }
 const window={WebSocket:FakeWS,EventTarget,DOMException,URL,location:{href:'https://matrix.tencent.com/ai-detect/'}};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','shim.js'),'utf8'),{window,EventTarget,Event,DOMException,URL,MessageEvent,setTimeout,clearTimeout,console});

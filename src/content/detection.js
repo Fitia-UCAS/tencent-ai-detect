@@ -27,8 +27,8 @@
         '今日剩余次数:0'
     ];
 
-    // The site's counter is part of the detect button — "立即检测(今日剩余5次)" — and the wording
-    // changes as the count falls, ending as "今日次数已用完". An enumerated list of phrases can
+    // The site's counter is part of the detect button - "detect (5 left today)" in its own wording - and
+    // the wording changes as the count falls, ending in an exhausted form. An enumerated list can
     // never cover every variant: the exhausted wording was missing from it, so an empty quota read
     // as Ready and rotation never started. The count is parsed instead, and exhaustion is matched
     // by pattern rather than by exact string.
