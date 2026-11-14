@@ -19,7 +19,9 @@
             ZQ.handlePageState('quota');
         });
 
-        observer.observe(document.documentElement, {
+        // document_start can run before the <html> element exists. A Document is a valid
+        // MutationObserver target and also observes the root as it is inserted later.
+        observer.observe(document, {
             childList: true,
             subtree: true,
             characterData: true

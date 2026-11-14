@@ -59,8 +59,11 @@
     };
 
     ZQ.saveDraft = function () {
-        const text = ZQ.readEditor();
-        if (!text) return false;
+        // Keep the original text, including leading/trailing whitespace. readEditor() trims for
+        // button gating, but a saved draft must faithfully preserve what the user entered.
+        const editor = document.querySelector(EDITOR_SELECTOR);
+        const text = editor ? (editor.textContent || '') : '';
+        if (!text.trim()) return false;
 
         try {
             localStorage.setItem(DRAFT_KEY, text);
@@ -72,9 +75,14 @@
         return true;
     };
 
+    // A populated editor wins over a stored backup for the entire page load. Otherwise, clearing
+    // newer text could unexpectedly resurrect an older draft on a later timer tick.
+    let draftRestoreConflict = false;
+
     // Puts the draft back after a reload, then forgets it so a later visit does not resurrect text
     // the user already moved on from.
     ZQ.restoreDraft = function () {
+        if (draftRestoreConflict) return false;
         let text = null;
 
         try {
@@ -85,13 +93,31 @@
 
         if (!text) return false;
 
+        // At document_start the site's editor may not exist yet. Keep the draft until it does.
+        // Likewise, do not overwrite text the user has already entered after the reload.
+        const editor = document.querySelector(EDITOR_SELECTOR);
+        if (!editor) return false;
+        if ((editor.textContent || '').trim()) {
+            draftRestoreConflict = true;
+            return false;
+        }
+
+        try {
+            if (!ZQ.writeEditor(text)) return false;
+            // A synchronous page input listener can reject/reset the change without throwing.
+            // In that case retain the draft for a later recovery attempt.
+            if (!(editor.textContent || '').trim()) return false;
+        } catch (e) {
+            return false;
+        }
+
+        // Only discard the backup after the editor accepted a non-empty value.
+        // A storage error does not mean the editor write itself failed.
         try {
             localStorage.removeItem(DRAFT_KEY);
         } catch (e) {
         }
-
-        // The editor only exists once the page has rendered its own bundle.
-        return ZQ.writeEditor(text);
+        return true;
     };
 
     function lastDetected() {
