@@ -74,6 +74,10 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
 
         chrome.runtime.onMessage.addListener(route);
 
+        // The worker restarts often; the rules it installed earlier are still there. Read them back
+        // so `current` describes the browser instead of starting out empty.
+        identity.sync();
+
         // Worker wake-up must respect the saved switch instead of re-creating the alarm blindly.
         chrome.storage.local.get([KEYS.relayEnabled], stored => {
             if (stored[KEYS.relayEnabled] !== false) keepAlive.ensureAlarm();

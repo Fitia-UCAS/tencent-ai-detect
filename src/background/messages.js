@@ -75,17 +75,27 @@ export function createMessageRouter({ chrome, keys, keepAlive, host, health, usa
 
         // The address this page load chose. The content script publishes it before sending
         // anything, so the header rule exists by the time the captcha is requested.
+        //
+        // The reply waits for the rule to be read back, because "success" here is what the content
+        // script treats as permission to let a detection go out. Answering before that check was
+        // what made a failed rule installation look like a working one.
         setIdentity(request, sender, respond) {
-            const applied = identity.apply(request.ip);
+            identity.apply(request.ip)
+                .then(applied => {
+                    if (!applied) {
+                        respond({ status: 'ignored' });
+                        return;
+                    }
 
-            if (!applied) {
-                respond({ status: 'ignored' });
-                return false;
-            }
+                    chrome.storage.local.set({ [keys.identityIp]: identity.current });
+                    respond({ status: 'success' });
+                })
+                .catch(error => respond({
+                    status: 'error',
+                    message: String(error && error.message ? error.message : error)
+                }));
 
-            chrome.storage.local.set({ [keys.identityIp]: identity.current });
-            respond({ status: 'success' });
-            return false;
+            return true;
         },
 
         getStatus(request, sender, respond) {
