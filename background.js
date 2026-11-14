@@ -24,7 +24,15 @@
     const HOST_NAME = 'com.afei.tencent_ai_detect_relay';
     const PING_ALARM = 'relay-keepalive';
 
+    // How many unanswered recovery requests before the host process itself is replaced. Two ticks is
+    // about two minutes, long enough for a slow respawn to finish on its own.
+    const MAX_ENSURE_FAILURES = 2;
+
     let nativePort = null;
+
+    // Consecutive keepalive ticks that asked for recovery and saw no relay. Reset on any healthy
+    // tick. Kept outside the port so reconnecting does not lose the count.
+    let ensureFailures = 0;
     let relayOnline = false;
     let lastMirrorAt = 0;
 
@@ -175,6 +183,8 @@
         // A parseable JSON response is not necessarily a healthy relay. Only
         // the explicit ok:true state should suppress the recovery command.
         if (body && body.ok === true) {
+            ensureFailures = 0;
+
             // A read-only GET is not a lease renewal. Only the native host can
             // request an authenticated heartbeat for a child it owns.
             if (nativePort) {
@@ -187,6 +197,21 @@
             } else {
                 connectHost();
             }
+            return;
+        }
+
+        // `ensure` asks the host to respawn its child, but a host that is itself wedged - its spawn
+        // path broken, its own state gone bad - accepts the message and does nothing with it. The
+        // port still reads as connected, so posting `ensure` forever changes nothing and the relay
+        // stays down until the browser is restarted. After a couple of unanswered ticks, drop the
+        // port so the next tick connects a brand new host process instead.
+        ensureFailures += 1;
+
+        if (nativePort && ensureFailures >= MAX_ENSURE_FAILURES) {
+            log(`relay did not come back after ${ensureFailures} requests, reconnecting the host`, 'error');
+            ensureFailures = 0;
+            disconnectHost();
+            connectHost();
             return;
         }
 
