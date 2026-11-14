@@ -143,7 +143,7 @@
     // than was observed:
     //
     //   submitted-unconfirmed  pressed; nothing on the page has settled it yet
-    //   completed              the site's own counter fell, so one detection was charged
+    //   quota-decrement-observed  the displayed quota fell; this is NOT proof of completion
     //   blocked                the page shows the server's refusal; pressing again would send the
     //                          same doomed request
     //   unknown                a value written by an older build as a bare fingerprint
@@ -172,7 +172,9 @@
             const parsed = JSON.parse(raw);
             return {
                 f: String(parsed.f || ''),
-                s: String(parsed.s || 'unknown'),
+                // Older releases called a counter decrease "completed"; preserve that record
+                // as an observation rather than claiming the server completed this request.
+                s: parsed.s === 'completed' ? 'quota-decrement-observed' : String(parsed.s || 'unknown'),
                 a: Number(parsed.a) || 1,
                 t: Number(parsed.t) || 0,
                 q: typeof parsed.q === 'number' ? parsed.q : null
@@ -202,8 +204,8 @@
         }
     }
 
-    // Records whatever settled since the press. Only two outcomes are observable from the page: the
-    // refusal wording, and a counter that fell because a detection was charged.
+    // Records observations since the press. The displayed quota may change for reasons unrelated
+    // to this request, so a decrement is evidence of a UI change, NOT a completion signal.
     function settleAttempt() {
         const attempt = readAttempt();
         if (!attempt || attempt.s !== 'submitted-unconfirmed') return attempt;
@@ -214,7 +216,7 @@
             settled = 'blocked';
         } else {
             const quota = currentQuota();
-            if (attempt.q !== null && quota !== null && quota < attempt.q) settled = 'completed';
+            if (attempt.q !== null && quota !== null && quota < attempt.q) settled = 'quota-decrement-observed';
         }
 
         if (!settled) return attempt;

@@ -212,14 +212,23 @@ check('a press is recorded as an attempt, not as a completed detection', () => {
     'no confirmation exists yet at the moment of the click');
 });
 
-check('a counter that fell settles the attempt as completed', () => {
+check('a counter decrease is observed without claiming completion', () => {
   const page = load({ text: '要检测的内容' });
   page.ZQ.readQuota = () => ({ remaining: 5, exhausted: false });
   page.ZQ.autoDetect();
 
-  // The site charges a detection, so its own counter drops. That is the one observable proof.
+  // The DOM quota changes, but we cannot attribute it to this specific attempt.
   page.ZQ.readQuota = () => ({ remaining: 4, exhausted: false });
-  assert.equal(page.ZQ.attemptState(), 'completed');
+  assert.equal(page.ZQ.attemptState(), 'quota-decrement-observed');
+});
+
+check('a legacy completed record is read as a quota observation', () => {
+  const page = load({ text: '旧版本结果' });
+  page.store.set('zqLastDetected', JSON.stringify({
+    f: '旧版本结果', s: 'completed', a: 1, t: 1, q: 4
+  }));
+  assert.equal(page.ZQ.attemptState(), 'quota-decrement-observed');
+  assert.equal(page.ZQ.autoDetect(), false, 'a legacy record still suppresses duplicate submission');
 });
 
 check('a refusal settles the attempt as blocked', () => {
@@ -296,8 +305,8 @@ check('an unconfirmed rule does not block the press', () => {
 });
 
 if (failures.length) {
-  process.stdout.write(`\nFAIL: ${failures.length} of 21 checks\n`);
+  process.stdout.write(`\nFAIL: ${failures.length} of 22 checks\n`);
   process.exitCode = 1;
 } else {
-  process.stdout.write('\nPASS: 21/21 auto-detect checks\n');
+  process.stdout.write('\nPASS: 22/22 auto-detect checks\n');
 }
