@@ -16,11 +16,14 @@ const SOURCE = fs.readFileSync(path.join(__dirname, '../../src/content/engine.js
 
 // `relayOk` is what the worker answers to the health probe. `send` records every message so the
 // recovery path can be read from the outside.
-function load({ relayOk = false, enabled = true, alive = true, rotating = false, storage, getFails = false, setFails = false, silentWrite = false } = {}) {
-    // The reload budget lives in localStorage, so a test that spans a reload has to share this map.
+function load({ relayOk = false, enabled = true, alive = true, rotating = false, storage, getFails = false, setFails = false, silentWrite = false, noStorage = false } = {}) {
+    // The reload budget lives in extension storage, so a test that spans a reload shares this map.
+    // The page's own localStorage is present but deliberately irrelevant: the page owns it, so it
+    // must not be able to influence the budget either way.
     const store = storage || new Map();
     const sends = [];
     const reports = [];
+    const pageWrites = [];
     const timers = new Map();
     const reloads = [];
     const listeners = new Map();
@@ -65,6 +68,32 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false,
                     }
                     return undefined;
                 }
+            },
+            // Absent entirely when the extension context is gone, which is one of the failure modes
+            // the budget must fail closed on.
+            storage: noStorage ? undefined : {
+                local: {
+                    get(keys, callback) {
+                        if (getFails) throw new Error('storage read blocked');
+                        setTimeout(() => {
+                            const out = {};
+                            for (const key of keys) {
+                                if (store.has(key)) out[key] = store.get(key);
+                            }
+                            callback(out);
+                        }, 0);
+                    },
+                    set(items, callback) {
+                        if (setFails) throw new Error('storage write blocked');
+                        setTimeout(() => {
+                            // A write that is accepted but not persisted must not read back.
+                            if (!silentWrite) {
+                                for (const [key, value] of Object.entries(items)) store.set(key, value);
+                            }
+                            if (callback) callback();
+                        }, 0);
+                    }
+                }
             }
         },
         window: {
@@ -74,16 +103,11 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false,
             }
         },
         document: {},
+        // Present so a path that wrote the budget into page-owned storage would be visible.
         localStorage: {
-            getItem: key => {
-                if (getFails) throw new Error('getItem blocked');
-                return store.has(key) ? store.get(key) : null;
-            },
-            setItem: (key, value) => {
-                if (setFails) throw new Error('setItem blocked');
-                if (!silentWrite) store.set(key, String(value));
-            },
-            removeItem: key => store.delete(key)
+            getItem: () => null,
+            setItem: key => pageWrites.push(key),
+            removeItem: () => {}
         },
         location: { reload: () => reloads.push(Date.now()) },
         setTimeout: fn => {
@@ -104,21 +128,18 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false,
         ZQ, sends, reports, timers, reloads, listeners, storage: store,
         // What the stored reload budget currently says.
         stored: () => {
-            const raw = store.get('zqTransportReloads');
-            if (!raw) return 0;
-            try {
-                return Number(JSON.parse(raw).count) || 0;
-            } catch (e) {
-                return 0;
-            }
+            const record = store.get('zqTransportReloads');
+            return record && typeof record === 'object' ? Number(record.count) || 0 : 0;
         },
+        // Simulates a page script wiping its own origin's storage. It cannot reach the extension
+        // store, which is the point.
+        wipePageStorage: () => { pageWrites.length = 0; },
+        pageStorageWrites: () => pageWrites.length,
         // Ages the stored record past the window, as a later page load would see it.
         expireBudget: () => {
-            const raw = store.get('zqTransportReloads');
-            if (!raw) return;
-            const record = JSON.parse(raw);
-            record.at = Date.now() - 120000;
-            store.set('zqTransportReloads', JSON.stringify(record));
+            const record = store.get('zqTransportReloads');
+            if (!record || typeof record !== 'object') return;
+            store.set('zqTransportReloads', { count: record.count, at: Date.now() - 120000 });
         },
         // Lets the probe's queued callback run without firing the reload timers.
         settle: () => new Promise(resolve => setImmediate(resolve)),
@@ -229,7 +250,7 @@ check('the two-reload budget holds across three distinct page loads', async () =
     assert.deepEqual(third.statuses(), ['transport-failed']);
 });
 
-check('blocked localStorage reads report a failure without a reload', async () => {
+check('blocked storage reads report a failure without a reload', async () => {
     const page = load({ relayOk: true, getFails: true });
     await page.announce();
     page.fireTimers();
@@ -237,12 +258,45 @@ check('blocked localStorage reads report a failure without a reload', async () =
     assert.deepEqual(page.statuses(), ['transport-failed']);
 });
 
-check('blocked localStorage writes report a failure without a reload', async () => {
+check('blocked storage writes report a failure without a reload', async () => {
     const page = load({ relayOk: true, setFails: true });
     await page.announce();
     page.fireTimers();
     assert.equal(page.reloads.length, 0);
     assert.deepEqual(page.statuses(), ['transport-failed']);
+});
+
+check('a missing extension storage fails closed', async () => {
+    // The context can be gone (worker torn down, extension reloaded). Reading that as "no reloads
+    // recorded yet" would restore exactly the per-load reset the budget exists to prevent.
+    const page = load({ relayOk: true, noStorage: true });
+    await page.announce();
+    page.fireTimers();
+    assert.equal(page.reloads.length, 0);
+    assert.deepEqual(page.statuses(), ['transport-failed']);
+});
+
+check('the page cannot reset the budget through its own storage', async () => {
+    const first = load({ relayOk: true });
+    await first.announce();
+    first.fireTimers();
+    assert.equal(first.reloads.length, 1);
+    assert.equal(first.stored(), 1, 'the budget is written where the page cannot reach it');
+    assert.equal(first.pageStorageWrites(), 0, 'and nothing is written to page-owned storage');
+
+    // A page script wiping its origin's storage cannot touch the record, so a third load still
+    // has to respect the two-reload budget.
+    const second = load({ relayOk: true, storage: first.storage });
+    second.wipePageStorage();
+    await second.announce();
+    second.fireTimers();
+    assert.equal(second.reloads.length, 1, 'the second reload is still within the budget');
+
+    const third = load({ relayOk: true, storage: first.storage });
+    third.wipePageStorage();
+    await third.announce();
+    third.fireTimers();
+    assert.equal(third.reloads.length, 0, 'a wiped page storage must not refill the budget');
 });
 
 check('silently ignored storage writes do not permit a reload', async () => {
@@ -254,17 +308,27 @@ check('silently ignored storage writes do not permit a reload', async () => {
 });
 
 check('corrupt reload records fail closed', async () => {
-    for (const bad of ['not json', '{"count":null,"at":1}', '{"count":-1,"at":1}', '{"count":1,"at":0}']) {
-        const page = load({ relayOk: true, storage: new Map([['zqTransportReloads', bad]]) });
+    const bad = [
+        'not an object',
+        { count: null, at: 1 },
+        { count: -1, at: 1 },
+        { count: 0, at: 1 },
+        { count: 1, at: 0 },
+        { count: 1.5, at: 1 },
+        { at: Date.now() }
+    ];
+
+    for (const record of bad) {
+        const page = load({ relayOk: true, storage: new Map([['zqTransportReloads', record]]) });
         await page.announce();
         page.fireTimers();
-        assert.equal(page.reloads.length, 0, `record ${bad} must not permit a reload`);
+        assert.equal(page.reloads.length, 0, `record ${JSON.stringify(record)} must not permit a reload`);
         assert.deepEqual(page.statuses(), ['transport-failed']);
     }
 });
 
 check('a future reload timestamp is invalid rather than an expired budget', async () => {
-    const future = JSON.stringify({ count: 1, at: Date.now() + 3600000 });
+    const future = { count: 1, at: Date.now() + 3600000 };
     const page = load({ relayOk: true, storage: new Map([['zqTransportReloads', future]]) });
     await page.announce();
     page.fireTimers();

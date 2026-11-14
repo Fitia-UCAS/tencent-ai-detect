@@ -293,34 +293,87 @@
     //                       socket fails too, reloading again is a loop, and the page would keep
     //                       throwing itself away without ever detecting anything.
     //
-    // The budget lives in localStorage, not in memory. A counter reset by the very reload it is
-    // meant to bound would allow one more reload per load, which is not a bound at all.
+    // The budget lives in extension storage - not in memory, and not in localStorage.
+    //
+    // In memory it is reset by the very reload it bounds, which allows one reload per load forever.
+    // In localStorage it is owned by the site: a page script clearing its own storage resets it, and
+    // a blocked, full, or silently-dropped write resets it too. Either way the bound disappears,
+    // which is the loop it exists to prevent. Extension storage is the one place the counted page
+    // cannot write.
     ZQ.TRANSPORT_RELOAD_KEY = 'zqTransportReloads';
     ZQ.TRANSPORT_RELOAD_LIMIT = 2;
     ZQ.TRANSPORT_RELOAD_WINDOW_MS = 60000;
 
-    // Returns the reload count, or null if it cannot be trusted. Unknown is NOT zero:
-    // a storage failure must not turn the cross-load limit into one reload per page forever.
-    function transportReloads() {
+    function budgetStore() {
+        const storage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+        return storage && typeof storage.get === 'function' && typeof storage.set === 'function'
+            ? storage
+            : null;
+    }
+
+    // Wraps the callback API the rest of this extension uses. Rejects on both an exception and a
+    // runtime error, so a dead extension context cannot read as "nothing recorded yet".
+    function readBudget() {
+        return new Promise((resolve, reject) => {
+            const store = budgetStore();
+            if (!store) { reject(new Error('no storage')); return; }
+
+            try {
+                store.get([ZQ.TRANSPORT_RELOAD_KEY], stored => {
+                    if (chrome.runtime && chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                        return;
+                    }
+                    resolve(stored ? stored[ZQ.TRANSPORT_RELOAD_KEY] : undefined);
+                });
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+
+    function writeBudget(record) {
+        return new Promise((resolve, reject) => {
+            const store = budgetStore();
+            if (!store) { reject(new Error('no storage')); return; }
+
+            try {
+                store.set({ [ZQ.TRANSPORT_RELOAD_KEY]: record }, () => {
+                    if (chrome.runtime && chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                        return;
+                    }
+                    resolve();
+                });
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+
+    // Strict on purpose: a record that cannot be read exactly is not a record of zero spend.
+    function validBudget(record) {
+        if (!record || typeof record !== 'object') return null;
+        if (!Number.isSafeInteger(record.count) || record.count < 1) return null;
+        if (!Number.isFinite(record.at) || record.at <= 0) return null;
+        return { count: record.count, at: record.at };
+    }
+
+    // Returns the reload count, or null if it cannot be trusted. Unknown is NOT zero: a storage
+    // failure must not turn the cross-load limit into one reload per page forever.
+    async function transportReloads() {
         let raw;
+
         try {
-            raw = localStorage.getItem(ZQ.TRANSPORT_RELOAD_KEY);
+            raw = await readBudget();
         } catch (e) {
             return null;
         }
 
-        if (raw === null) return 0; // No record has ever been written.
+        if (raw === undefined || raw === null) return 0; // Nothing has ever been recorded.
 
-        let record;
-        try {
-            record = JSON.parse(raw);
-        } catch (e) {
-            return null;
-        }
-
-        if (!record || typeof record !== 'object' ||
-            !Number.isSafeInteger(record.count) || record.count < 1 ||
-            !Number.isFinite(record.at) || record.at <= 0) return null;
+        const record = validBudget(raw);
+        if (!record) return null;
 
         const age = Date.now() - record.at;
         if (age < 0) return null; // A future timestamp must not reset the budget.
@@ -329,13 +382,15 @@
         return record.count;
     }
 
-    // Confirm persistence before permitting the reload. setItem can throw (or be blocked),
-    // and a silently dropped write must not be mistaken for a durable cross-load budget.
-    function recordTransportReload(count) {
-        const value = JSON.stringify({ count, at: Date.now() });
+    // Confirm persistence by reading it back before permitting the reload. A write that was dropped
+    // on the floor must not be mistaken for a durable cross-load budget.
+    async function recordTransportReload(count) {
+        const record = { count, at: Date.now() };
+
         try {
-            localStorage.setItem(ZQ.TRANSPORT_RELOAD_KEY, value);
-            return localStorage.getItem(ZQ.TRANSPORT_RELOAD_KEY) === value;
+            await writeBudget(record);
+            const readBack = validBudget(await readBudget());
+            return Boolean(readBack) && readBack.count === record.count && readBack.at === record.at;
         } catch (e) {
             return false;
         }
@@ -354,7 +409,7 @@
             return;
         }
 
-        const recorded = transportReloads();
+        const recorded = await transportReloads();
         if (recorded === null) {
             // Cannot establish a cross-load budget; report the failure rather than guessing zero.
             ZQ.reportState(ZQ.currentState('transport-failed'));
@@ -374,7 +429,7 @@
         }
 
         // Never schedule a new reload unless its budget was durably recorded first.
-        if (!recordTransportReload(spent + 1)) {
+        if (!(await recordTransportReload(spent + 1))) {
             ZQ.reportState(ZQ.currentState('transport-failed'));
             return;
         }
