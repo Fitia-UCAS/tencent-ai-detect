@@ -117,7 +117,11 @@ function parsePatch(text) {
         if (!hunk) continue;
         // A newline marker belongs to the previous line; a blank line is the end of the diff body.
         if (line.startsWith('\\') || line === '') continue;
-        if (line[0] === ' ' || line[0] === '+' || line[0] === '-') hunk.lines.push(line);
+        // The ending is dropped here too, so a body line and the base line it refers to compare
+        // equal regardless of what the patch file used.
+        if (line[0] === ' ' || line[0] === '+' || line[0] === '-') {
+            hunk.lines.push(line.replace(/\r$/, ''));
+        }
     }
 
     return files;
@@ -186,9 +190,16 @@ function applyHunks(baseLines, hunks) {
     return { lines: out, drift, errors };
 }
 
+// Trailing CR is dropped: this tool compares content. The repo stores bytes exactly
+// (gitattributes `* -text`), and a patch may carry CRLF on some lines and not others, so keeping
+// the endings would report drift on every context line and bury the actual difference.
+function splitLines(text) {
+    return text.split('\n').map(line => line.replace(/\r$/, ''));
+}
+
 function readAt(commit, file) {
     try {
-        return git(['show', commit + ':' + file]).split('\n');
+        return splitLines(git(['show', commit + ':' + file]));
     } catch (error) {
         return null;
     }
@@ -199,7 +210,7 @@ function readWorking(file) {
     if (!fs.existsSync(full)) return null;
     // A proposal may name a directory (tests/unit/), which has no text of its own.
     if (!fs.statSync(full).isFile()) return null;
-    return fs.readFileSync(full, 'utf8').split('\n');
+    return splitLines(fs.readFileSync(full, 'utf8'));
 }
 
 // Trailing blank lines are a difference in how the file ends, not in what it says. Comparing on the
@@ -366,9 +377,17 @@ const PROPOSALS = [
         id: 'P1-7',
         file: 'src/shim/index.js',
         topic: '连不上就静默切回原始地址，掩盖了传输失败',
-        verdict: 'open',
-        claim: '同意，还没做。_fallback() 仍然吞掉第一次失败，于是"relay 从未连上"和"请求被服务端拒绝"在页面上表现完全一样，诊断时会指错层。这是目前唯一还会误导判断的地方。',
-        probe: { must: [/_fallback\(\) \{/] }
+        verdict: 'extended',
+        claim: '由交付包实现：_fallback() 被删除，relay 在 open 之前失败时走 _failRelay() → _fail()，只派发一次终态 error 与 close，不再切回原始地址。我们在此基础上补了闭环 —— fail-closed 之后页面手里是一个死 socket，页面自己不会开第二个，所以 shim 用 zq:relay-failed 事件通知内容脚本：relay 真的挂了就走轮换路径（请求重连并自身重试），relay 还活着则每次页面加载只允许一次 reload，之后只上报，避免死循环。',
+        probe: { must: [/_failRelay\(\)/, /zq:relay-failed/] }
+    },
+    {
+        id: 'P1-7b',
+        file: 'src/content/engine.js',
+        topic: 'fail-closed 之后要有闭环，否则页面拿着死 socket 永远不恢复',
+        verdict: 'extended',
+        claim: '审查方没提这一条，是 P1-7 的直接后果。删掉 fallback 是对的，但页面自己不会重开 socket，relay 恢复后也只会一直瘫着。engine.js 现在监听 zq:relay-failed：relay 不在就交给轮换路径（请求重连 + 自身重试，恢复后 reload）；relay 还在则每次页面加载只允许一次 reload 然后只上报，避免变成刷新循环。',
+        probe: { must: [/handleTransportFailure/, /transportRetried/] }
     },
     {
         id: 'P1-8',
@@ -400,7 +419,7 @@ function runProbe(proposal, text, fileSet) {
     const probe = proposal.probe || {};
 
     if (probe.files) {
-        const missing = probe.files.filter(file => !fileSet.has(file));
+        const missing = probe.files.filter(file => !fileSet.has(file) && !fs.existsSync(path.join(ROOT, file)));
         return missing.length ? 'missing file(s): ' + missing.join(', ') : null;
     }
 
