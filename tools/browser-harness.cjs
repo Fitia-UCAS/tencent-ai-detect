@@ -49,10 +49,13 @@ function cdp(wsUrl) {
     };
     ws.onerror = () => reject(new Error('cdp connect failed'));
     ws.onopen = () => resolve({
-      send: (method, params = {}) => new Promise((res, rej) => {
+      // sessionId targets one attached target in flattened mode; omit it for the page itself.
+      send: (method, params = {}, sessionId = undefined) => new Promise((res, rej) => {
         const msgId = ++id;
         pending.set(msgId, { res, rej });
-        ws.send(JSON.stringify({ id: msgId, method, params }));
+        const frame = { id: msgId, method, params };
+        if (sessionId) frame.sessionId = sessionId;
+        ws.send(JSON.stringify(frame));
       }),
       on: fn => listeners.push(fn),
       close: () => ws.close()

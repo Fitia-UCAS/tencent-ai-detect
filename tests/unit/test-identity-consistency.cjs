@@ -153,7 +153,7 @@ check('the identity reaches the captcha request', () => {
 
 check('an unvalidated address never reaches the header rule', () => {
     assert.match(background, /export function isIpv4\(value\)/, 'the background validates too');
-    assert.match(background, /if \(!isIpv4\(ip\)\) return false;/,
+    assert.match(background, /if \(!isIpv4\(ip\)\) return false;|if \(!isIpv4\(ip\)\) return Promise\.resolve\(false\);/,
         'apply must refuse anything else');
 });
 
