@@ -280,4 +280,45 @@
     ZQ.stopWatchdog = function () {
         if (typeof ZQ._stopWatchdog === 'function') ZQ._stopWatchdog();
     };
+
+    // The shim reports a failed relay attempt here instead of quietly opening the original
+    // endpoint. Failing closed is the right default - a direct socket would carry a different
+    // address than the one the captcha ticket was issued for - but it leaves the page holding a
+    // dead socket, and nothing in the page opens another one.
+    //
+    // So the recovery is driven from here, and it is bounded on purpose:
+    //   * relay offline  -> the rotation path already asks for a reconnect and retries itself,
+    //                       then reloads once the relay answers. That path paces itself.
+    //   * relay online   -> the failure was not the relay. Reloading on a timer would then loop,
+    //                       so this is allowed exactly once per page load and then reported.
+    ZQ.state.transportRetried = false;
+
+    ZQ.handleTransportFailure = async function () {
+        if (!ZQ.state.contextAlive || !ZQ.state.enabled || !ZQ.state.autoRefresh) return;
+        if (ZQ.state.rotating) return;
+
+        const relayUp = await ZQ.relayReady();
+
+        if (!relayUp) {
+            ZQ.rotate('transport-failed');
+            return;
+        }
+
+        if (ZQ.state.transportRetried) {
+            // Already spent this load's one retry. Report it rather than reload again.
+            ZQ.reportState(ZQ.currentState('transport-failed'));
+            return;
+        }
+
+        ZQ.state.transportRetried = true;
+        ZQ.reportState(ZQ.currentState('transport-failed'));
+        ZQ.scheduleRetry(1200);
+    };
+
+    // The hook is optional: a sandbox without DOM event support (the unit tests build one) keeps
+    // the rest of the module working, and the shim's announcement is simply unheard there.
+    if (typeof window.addEventListener === 'function') {
+        // Returned so a caller (a test) can wait for the outcome; the DOM ignores the value.
+        window.addEventListener('zq:relay-failed', () => ZQ.handleTransportFailure());
+    }
 })();

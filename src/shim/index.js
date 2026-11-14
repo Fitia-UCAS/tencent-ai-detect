@@ -221,6 +221,15 @@
             // server response received over an established connection.
             if (this._failed || this._closeRequested) return;
             this._fail();
+
+            // Failing closed leaves the page with a dead socket, and nothing in the page retries
+            // one. Announcing it lets the content script drive the recovery it already owns: ask
+            // for the relay back, and reload once it is up so a fresh socket is opened.
+            try {
+                window.dispatchEvent(new CustomEvent('zq:relay-failed'));
+            } catch (error) {
+                // A page that forbids custom events still gets the terminal error above.
+            }
         }
 
         _fail() {
