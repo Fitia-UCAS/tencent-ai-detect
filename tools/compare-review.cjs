@@ -412,6 +412,46 @@ const PROPOSALS = [
         verdict: 'extended',
         claim: '四条里覆盖了三条：test-document-start.cjs、test-draft-safety.cjs（九个存储与写入失败场景）、以及 test-auto-detect.cjs 里的提交状态用例。双标签页仍无覆盖，与 P1-9 一致。',
         probe: { files: ['tests/unit/test-document-start.cjs', 'tests/unit/test-draft-safety.cjs'] }
+    },
+    {
+        id: 'P1-10',
+        file: 'src/content/engine.js',
+        topic: 'localStorage 读写失败时，跨页面 reload 预算失效',
+        verdict: 'extended',
+        claim: '审查方发现了这条，修的是故障路径（读写异常、记录损坏、时间戳异常一律 fail-closed）。但预算仍放在网站 origin 的 localStorage 里 —— 那一份是页面自己能清的，所以"扩展控制"这半个要求没做到。已迁到 chrome.storage.local，读写失败与回读不一致同样 fail-closed。',
+        probe: { must: [/chrome\.storage\.local/, /validBudget/, /recordTransportReload/], mustNot: [/localStorage\.setItem\(ZQ\.TRANSPORT_RELOAD_KEY/] }
+    },
+    {
+        id: 'P1-11',
+        file: 'src/content/auto.js',
+        topic: '计数器下降不能证明本次检测完成，不该叫 completed',
+        verdict: 'adopted',
+        claim: '审查方的判断：页面显示的额度下降无法归因到这一次请求，没有请求 ID 就没有因果关系。这个判据是我自己找的，也确实撑不住，已改成 quota-decrement-observed，旧记录按观察态读，重复提交防护不变。',
+        probe: { must: [/quota-decrement-observed/], mustNot: [/settled = 'completed'/] }
+    },
+    {
+        id: 'P1-12',
+        file: 'src/content/engine.js',
+        topic: '站点 SDK 是否会自己重连，没验证前不该再叠加一套 reload',
+        verdict: 'extended',
+        claim: '审查方要求先被动观测。已经实测（tools/diagnostics/diag-sdk-reconnect.cjs，不杀本机 relay）：页面加载时会自己建一个 socket，把它关掉之后 30 秒内没有出现第二个，页面也没有自行刷新。所以没有 SDK 重连可依赖，reload 是唯一的恢复手段，保留。',
+        probe: { files: ['tools/diagnostics/diag-sdk-reconnect.cjs'] }
+    },
+    {
+        id: 'P1-13',
+        file: 'src/background/identity.js',
+        topic: 'sync() 与 apply() 没有统一串行化',
+        verdict: 'adopted',
+        claim: '审查方的判断成立：sync() 在队列外直接读规则，worker 重启时若排在一次 apply 之后完成，会把旧地址写回 current，下一次发布就会跳过一次本该做的更新。已让 sync() 进同一条队列，并给规则调用加超时，避免一次不回调把队列永久堵死。',
+        probe: { must: [/function enqueue/, /withTimeout/, /sync\(\) \{\s*return enqueue/] }
+    },
+    {
+        id: 'P1-14',
+        file: 'src/background/identity.js',
+        topic: '三条动态规则全局共享，不按标签页隔离',
+        verdict: 'open',
+        claim: '按审查方的判断暂时不做，但把限制写进 README：同时开多个检测页不受支持，两个页面会互相覆盖 x-forwarded-for。将来要支持需要 updateSessionRules + tabIds 并跟踪标签页生命周期。',
+        probe: { files: ['README.md'], must: [/tabIds/] }
     }
 ];
 
