@@ -41,6 +41,8 @@
     "test:relay-terminal-once": "node scripts/test-relay-terminal-once.cjs",
     "clean:processes": "node scripts/clean-processes.cjs",
     "doctor": "node scripts/doctor.cjs",
+    "switch:dev": "node scripts/switch-branch.cjs dev",
+    "switch:main": "node scripts/switch-branch.cjs main",
     "test:clean-processes": "node scripts/test-clean-processes.cjs",
     "test:session-trace": "node scripts/test-session-trace-analysis.cjs",
     "test:relay-config": "node scripts/test-relay-config.cjs",
