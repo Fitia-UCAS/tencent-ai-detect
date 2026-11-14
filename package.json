@@ -68,6 +68,7 @@
     "test:captcha-guard": "node tests/unit/test-captcha-guard.cjs",
     "test:relay-identity": "node tests/integration/test-relay-identity.cjs",
     "e2e:identity": "node tests/e2e/e2e-identity.cjs",
+    "e2e:auto-refresh": "node tests/e2e/e2e-auto-refresh.cjs",
     "e2e:captcha-guard": "node tests/e2e/e2e-captcha-guard.cjs",
     "setup": "node host/register-manifest.cjs && node tests/integration/test-native-registration.cjs"
   }
