@@ -13,12 +13,16 @@
     "contextMenus",
     "sidePanel",
     "nativeMessaging",
-    "alarms"
+    "alarms",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
     "https://matrix.tencent.com/ai-detect/*",
     "https://matrix.tencent.com/*",
     "https://captcha.gtimg.com/*",
+    "https://t.captcha.qq.com/*",
+    "https://captcha.qq.com/*",
     "http://127.0.0.1:9420/*"
   ],
   "background": {
@@ -44,6 +48,7 @@
       ],
       "js": [
         "src/content/core.js",
+        "src/content/identity.js",
         "src/content/detection.js",
         "src/content/engine.js",
         "src/content/index.js"

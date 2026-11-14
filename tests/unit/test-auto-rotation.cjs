@@ -13,8 +13,8 @@ const CONTENT_DIR = path.join(__dirname, '..', '..', 'src', 'content');
 // engine.js is loaded on its own for the unit-level checks, and all four files for the wiring
 // check: whether index.js actually starts the watchdog is a separate question from whether the
 // watchdog works.
-const FILES = ['core.js', 'detection.js', 'engine.js'];
-const ALL_FILES = ['core.js', 'detection.js', 'engine.js', 'index.js'];
+const FILES = ['core.js', 'identity.js', 'detection.js', 'engine.js'];
+const ALL_FILES = ['core.js', 'identity.js', 'detection.js', 'engine.js', 'index.js'];
 
 // Builds the content namespace over a given page text. Rotations are counted through the storage
 // record the engine writes, so no network or chrome surface is involved. Timers are tracked so the
@@ -25,10 +25,18 @@ function load(bodyText, files = FILES) {
   const intervals = new Set();
 
   const sandbox = {
-    window: {},
+    // The captcha predicate asks the DOM whether a challenge is on screen. No challenge exists in
+    // these fixtures, so the lookups answer null and the measurements stay at a real viewport.
+    window: {
+      innerWidth: 1028,
+      innerHeight: 754,
+      getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' })
+    },
     document: {
       body: { innerText: bodyText },
-      documentElement: {},
+      documentElement: { clientWidth: 1028, clientHeight: 754 },
+      getElementById() { return null; },
+      querySelector() { return null; },
       addEventListener() {},
       querySelectorAll() { return []; },
       cookie: ''

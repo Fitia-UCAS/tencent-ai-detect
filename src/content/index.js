@@ -48,7 +48,18 @@
             ZQ.send({ action: 'usageIncrement' });
 
             setTimeout(() => {
-                if (ZQ.state.enabled && !ZQ.state.rotating) ZQ.handlePageState('quota-after-click');
+                if (!ZQ.state.enabled || ZQ.state.rotating) return;
+
+                // Measured: an address serves four handshakes and is refused from the fifth onwards.
+                // Reloading before that point costs nothing and moves the page onto a fresh address,
+                // so the user never meets that refusal. Deciding on the count rather than on the
+                // refusal keeps rotate() off an ambiguous message, which once caused a reload loop.
+                if (ZQ.identityUses() >= ZQ.USES_PER_IDENTITY) {
+                    ZQ.rotate('identity-exhausted');
+                    return;
+                }
+
+                ZQ.handlePageState('quota-after-click');
             }, 2500);
         });
     }
@@ -114,6 +125,10 @@
     watchResults();
     registerMessages();
     readSettings();
+
+    // Pick this load's identity before anything is sent, and tell the background so it can put the
+    // same address on the page's own captcha request. The shim reads it back for the socket.
+    ZQ.publishIdentity(ZQ.ensureIdentity());
 
     // Ask on a timer as well, so a page that is already exhausted and then sits still still
     // rotates without the user clicking anything.

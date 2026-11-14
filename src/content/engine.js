@@ -69,6 +69,12 @@
     };
 
     // A stale script must not schedule new reloads after its context was invalidated.
+    //
+    // The user's challenge comes first: a reload here would throw their work away mid-captcha, so an
+    // open challenge postpones it instead. Re-checking keeps this from being a one-shot miss - the
+    // reload happens on its own once the challenge is gone.
+    ZQ.CAPTCHA_WAIT_MS = 2000;
+
     ZQ.scheduleRetry = function (delayMs) {
         if (!ZQ.state.contextAlive) return;
         if (ZQ.state.retryTimer) clearTimeout(ZQ.state.retryTimer);
@@ -76,7 +82,14 @@
         ZQ.writeState({ backoffUntil: Date.now() + delayMs });
 
         ZQ.state.retryTimer = setTimeout(() => {
-            if (ZQ.state.contextAlive && ZQ.state.autoRefresh) location.reload();
+            if (!ZQ.state.contextAlive || !ZQ.state.autoRefresh) return;
+
+            if (ZQ.captchaOpen()) {
+                ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
+                return;
+            }
+
+            location.reload();
         }, delayMs);
     };
 
@@ -105,6 +118,13 @@
 
     ZQ.rotate = async function (reason) {
         if (!ZQ.state.enabled || ZQ.state.rotating) return;
+
+        // A challenge on screen means the page is waiting on the user, not on a new address.
+        // Rotating now would reload mid-challenge and discard their work.
+        if (ZQ.captchaOpen()) {
+            ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
+            return;
+        }
 
         const state = ZQ.readState();
 
@@ -153,7 +173,8 @@
 
         ZQ.reportState(ZQ.currentState('rotated'));
 
-        // The reload opens a fresh socket, and the relay hands that socket a new client address.
+        // The reload opens a fresh socket. The reloaded page runs identity.js again, which mints a
+        // new address, so the reload - not the relay - is what rotates the identity.
         ZQ.scheduleRetry(1200);
     };
 

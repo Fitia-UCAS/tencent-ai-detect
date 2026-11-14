@@ -61,6 +61,11 @@
     "test:auto-rotation": "node tests/unit/test-auto-rotation.cjs",
     "test:native-registration": "node tests/integration/test-native-registration.cjs",
     "test:host-error": "node tests/unit/test-host-error.cjs",
+    "test:identity-consistency": "node tests/unit/test-identity-consistency.cjs",
+    "test:captcha-guard": "node tests/unit/test-captcha-guard.cjs",
+    "test:relay-identity": "node tests/integration/test-relay-identity.cjs",
+    "e2e:identity": "node tests/e2e/e2e-identity.cjs",
+    "e2e:captcha-guard": "node tests/e2e/e2e-captcha-guard.cjs",
     "setup": "node host/register-manifest.cjs && node tests/integration/test-native-registration.cjs"
   }
 }

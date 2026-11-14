@@ -18,6 +18,8 @@ export const KEYS = Object.freeze({
     lastResetTime: 'lastResetTime',
     ipUsageCount: 'ipUsageCount',
     lastStatus: 'lastStatus',
+    // The address the page most recently chose. Read by the panel and by diagnostics.
+    identityIp: 'identityIp',
     // Why the native host could not be reached. Without this a missing registration looks exactly
     // like a healthy idle extension: nothing happens and nothing says why.
     hostError: 'hostError'

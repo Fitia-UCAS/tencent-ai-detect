@@ -9,7 +9,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const CONTENT_DIR = path.join(__dirname, '..', '..', 'src', 'content');
-const SOURCES = ['core.js', 'detection.js', 'engine.js', 'index.js'].map(name => ({
+const SOURCES = ['core.js', 'identity.js', 'detection.js', 'engine.js', 'index.js'].map(name => ({
   name: 'src/content/' + name,
   text: require('node:fs').readFileSync(path.join(CONTENT_DIR, name), 'utf8')
 }));

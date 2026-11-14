@@ -117,6 +117,51 @@
         return 'ok';
     };
 
+    // Whether the challenge is on screen and waiting for the user.
+    //
+    // The phrases above cannot answer this: the challenge is rendered in an iframe owned by the
+    // captcha SDK, so its text never reaches body.innerText. Measured on the live page, the
+    // container is in the DOM at all times and hidden by being parked far off-screen, not by being
+    // collapsed:
+    //
+    //   div#tcaptcha_wrapper_transform_dy  offsetWidth 300  rect.y -1000000  opacity 0
+    //   iframe#tcaptcha_iframe_dy          offsetWidth 300  rect.y -1000000
+    //
+    // So size is useless here - it reads as present even with no challenge on screen, which would
+    // block every reload forever and look like nothing happening. What separates a live challenge is
+    // that it is inside the viewport and opaque. The template varies (drag image, pick the slowest,
+    // pick the matching item); the container does not.
+    ZQ.captchaOpen = function () {
+        const element = document.getElementById('tcaptcha_iframe_dy') ||
+            document.getElementById('tcaptcha_iframe') ||
+            document.getElementById('tcaptcha_transform') ||
+            document.getElementById('tcaptcha_wrapper_transform_dy') ||
+            document.querySelector('.tcaptcha-transform');
+
+        if (!element) return false;
+
+        const rect = element.getBoundingClientRect();
+        if (!(rect.width > 0 && rect.height > 0)) return false;
+
+        const viewWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewHeight = window.innerHeight || document.documentElement.clientHeight;
+
+        // Off-screen in any direction means hidden, which is how the SDK parks it.
+        if (rect.bottom <= 0 || rect.right <= 0) return false;
+        if (rect.top >= viewHeight || rect.left >= viewWidth) return false;
+
+        // And it has to be opaque: a container parked transparent, or one still fading in, is not
+        // asking the user anything yet.
+        for (let node = element, depth = 0; node && depth < 8; node = node.parentElement, depth += 1) {
+            const style = window.getComputedStyle(node);
+            if (!style) break;
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+            if (Number(style.opacity) === 0) return false;
+        }
+
+        return true;
+    };
+
     // Drop the fp so the page's own setFp() derives a fresh one from the browser's visitorId.
     // A hand-written random fp is refused by the server.
     ZQ.clearFp = function () {

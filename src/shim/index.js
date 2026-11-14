@@ -14,6 +14,41 @@
     const RELAY_URL = 'ws://127.0.0.1:9420/ws';
     const PATTERN = 'ai_gen_txt_server';
 
+    // The page's identity for this load, published by src/content/identity.js. Passing it on the
+    // socket path is what makes the server see the same address the captcha ticket was issued for;
+    // a socket on a different address gets the ticket refused with "Invalid request".
+    const IDENTITY_KEY = 'zqXff';
+
+    // How many handshakes this address has already performed. An address serves a measured four, so
+    // this count is what tells the content script when to move the page onto a fresh one. Counting
+    // sockets is exact; counting detection clicks is not, since one load reuses a single socket.
+    const USE_COUNT_KEY = 'zqXffUses';
+
+    function countUse() {
+        try {
+            const current = Number(window.localStorage.getItem(USE_COUNT_KEY)) || 0;
+            window.localStorage.setItem(USE_COUNT_KEY, String(current + 1));
+        } catch (e) {
+            // Storage blocked. The content script then keeps the address it has, which costs
+            // nothing.
+        }
+    }
+
+    function relayUrl() {
+        let identity = null;
+
+        try {
+            identity = window.localStorage.getItem(IDENTITY_KEY);
+        } catch (e) {
+            // Storage blocked: fall back to the relay's own choice.
+        }
+
+        // Only a plain IPv4 literal is ever appended; the value travels into an upstream header.
+        if (!identity || !/^\d{1,3}(\.\d{1,3}){3}$/.test(identity)) return RELAY_URL;
+
+        return RELAY_URL + '?xff=' + identity;
+    }
+
     // A frame produced while the socket is still connecting is held rather than
     // thrown away. The page sends at most a couple of frames this way, so the
     // bound is only a guard against a runaway loop.
@@ -104,7 +139,7 @@
         }
 
         _connect(useRelay, initial) {
-            const target = useRelay ? RELAY_URL : this._url;
+            const target = useRelay ? relayUrl() : this._url;
             let sock;
 
             try {
@@ -143,6 +178,8 @@
 
             sock.onopen = event => {
                 this._open = true;
+                // A relay socket that opened is one handshake on this address.
+                if (useRelay) countUse();
                 this._emit('open', event);
                 // Frames held while connecting go out after the page's own open
                 // handler, so the normal handshake keeps its place in the queue.

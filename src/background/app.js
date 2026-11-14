@@ -13,6 +13,7 @@ import { createRelayHealth } from './relay-health.js';
 import { createKeepAlive } from './keepalive.js';
 import { createUsageLog } from './usage-log.js';
 import { createMessageRouter } from './messages.js';
+import { createIdentityRules } from './identity.js';
 import { registerInjection, registerMenuClick, createMenu } from './page-hooks.js';
 import { CONTENT_FILES } from '../content/files.js';
 
@@ -33,7 +34,10 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
         chrome, keys: KEYS, defaults: DEFAULTS,
         historyLimit: RESET_HISTORY_LIMIT, usageWindowMs: USAGE_WINDOW_MS, usageCap: USAGE_CAP
     });
-    const route = createMessageRouter({ chrome, keys: KEYS, keepAlive, host, health, usage });
+    const identity = createIdentityRules({ chrome, log });
+    const route = createMessageRouter({
+        chrome, keys: KEYS, keepAlive, host, health, usage, identity
+    });
 
     // A live nativePort does not imply a live relay, so the alarm asks the host again rather than
     // trusting the port. The alarm is the only recurring actor in this worker.
