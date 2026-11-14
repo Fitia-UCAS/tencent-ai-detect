@@ -185,7 +185,9 @@
     function writeAttempt(attempt) {
         try {
             localStorage.setItem(ATTEMPT_KEY, JSON.stringify(attempt));
+            return true;
         } catch (e) {
+            return false;
         }
     }
 
@@ -218,7 +220,9 @@
         if (!settled) return attempt;
 
         const next = { ...attempt, s: settled };
-        writeAttempt(next);
+        // Do not report a settled state that could not be persisted. The next
+        // read must continue to see the last durable state.
+        if (!writeAttempt(next)) return attempt;
         return next;
     }
 
@@ -259,13 +263,18 @@
 
         // Recorded before the click, because the click can start a page change that removes the
         // editor. The interval must not come back to the same text while the request is in flight.
-        writeAttempt({
+        // Persist the duplicate-submission guard before clicking. If storage
+        // is unavailable, fail closed: clicking without a durable attempt record
+        // would let the next timer tick submit the same text again.
+        const recorded = writeAttempt({
             f: print,
             s: 'submitted-unconfirmed',
             a: 1,
             t: Date.now(),
             q: currentQuota()
         });
+        if (!recorded) return false;
+
         button.click();
 
         return true;

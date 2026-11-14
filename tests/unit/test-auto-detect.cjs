@@ -15,7 +15,7 @@ const SOURCE = fs.readFileSync(
 
 // A page with one editor and one detect button. `clicks` records what the extension pressed so the
 // assertions can be about behaviour rather than about markup.
-function load({ text = '', disabled = false, captcha = false } = {}) {
+function load({ text = '', disabled = false, captcha = false, failStorageWrites = false } = {}) {
   const store = new Map();
   const clicks = [];
   const inputs = [];
@@ -44,7 +44,10 @@ function load({ text = '', disabled = false, captcha = false } = {}) {
     },
     localStorage: {
       getItem: key => (store.has(key) ? store.get(key) : null),
-      setItem: (key, value) => store.set(key, String(value)),
+      setItem: (key, value) => {
+        if (failStorageWrites) throw new Error('storage unavailable');
+        store.set(key, String(value));
+      },
       removeItem: key => store.delete(key)
     },
     // The site's own listeners only react to real input events, so the module constructs one.
@@ -245,6 +248,15 @@ check('an unconfirmed text is not pressed again either', () => {
   page.ZQ.autoDetect();
 
   assert.equal(page.clicks.length, 1, 'unconfirmed must not be read as "did not happen"');
+});
+
+check('storage failure prevents a click without a durable attempt record', () => {
+  const page = load({ text: '存储不可用时不应提交', failStorageWrites: true });
+
+  assert.equal(page.ZQ.autoDetect(), false,
+    'the duplicate-submission guard must be durable before clicking');
+  assert.equal(page.clicks.length, 0, 'no click may occur when the attempt cannot be recorded');
+  assert.equal(page.store.has('zqLastDetected'), false);
 });
 
 check('a bare fingerprint from an older build is read as settled', () => {
