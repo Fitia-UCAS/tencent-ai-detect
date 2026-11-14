@@ -299,27 +299,45 @@
     ZQ.TRANSPORT_RELOAD_LIMIT = 2;
     ZQ.TRANSPORT_RELOAD_WINDOW_MS = 60000;
 
-    // Returns how many transport reloads already happened inside the window, dropping a stale record.
+    // Returns the reload count, or null if it cannot be trusted. Unknown is NOT zero:
+    // a storage failure must not turn the cross-load limit into one reload per page forever.
     function transportReloads() {
-        let record = null;
-
+        let raw;
         try {
-            record = JSON.parse(localStorage.getItem(ZQ.TRANSPORT_RELOAD_KEY) || 'null');
+            raw = localStorage.getItem(ZQ.TRANSPORT_RELOAD_KEY);
         } catch (e) {
-            return 0;
+            return null;
         }
 
-        if (!record || typeof record.at !== 'number') return 0;
-        if (Date.now() - record.at > ZQ.TRANSPORT_RELOAD_WINDOW_MS) return 0;
+        if (raw === null) return 0; // No record has ever been written.
 
-        return Number(record.count) || 0;
+        let record;
+        try {
+            record = JSON.parse(raw);
+        } catch (e) {
+            return null;
+        }
+
+        if (!record || typeof record !== 'object' ||
+            !Number.isSafeInteger(record.count) || record.count < 1 ||
+            !Number.isFinite(record.at) || record.at <= 0) return null;
+
+        const age = Date.now() - record.at;
+        if (age < 0) return null; // A future timestamp must not reset the budget.
+        if (age > ZQ.TRANSPORT_RELOAD_WINDOW_MS) return 0;
+
+        return record.count;
     }
 
+    // Confirm persistence before permitting the reload. setItem can throw (or be blocked),
+    // and a silently dropped write must not be mistaken for a durable cross-load budget.
     function recordTransportReload(count) {
+        const value = JSON.stringify({ count, at: Date.now() });
         try {
-            localStorage.setItem(ZQ.TRANSPORT_RELOAD_KEY, JSON.stringify({ count, at: Date.now() }));
+            localStorage.setItem(ZQ.TRANSPORT_RELOAD_KEY, value);
+            return localStorage.getItem(ZQ.TRANSPORT_RELOAD_KEY) === value;
         } catch (e) {
-            // Storage blocked: the in-memory flag below still stops a loop within one load.
+            return false;
         }
     }
 
@@ -336,7 +354,13 @@
             return;
         }
 
-        const spent = Math.max(transportReloads(), ZQ.state.transportRetried ? 1 : 0);
+        const recorded = transportReloads();
+        if (recorded === null) {
+            // Cannot establish a cross-load budget; report the failure rather than guessing zero.
+            ZQ.reportState(ZQ.currentState('transport-failed'));
+            return;
+        }
+        const spent = Math.max(recorded, ZQ.state.transportRetried ? 1 : 0);
 
         // Two separate bounds, because they answer different questions:
         //   * transportRetried - this load already reloaded once; a second failure in the same load
@@ -349,8 +373,12 @@
             return;
         }
 
+        // Never schedule a new reload unless its budget was durably recorded first.
+        if (!recordTransportReload(spent + 1)) {
+            ZQ.reportState(ZQ.currentState('transport-failed'));
+            return;
+        }
         ZQ.state.transportRetried = true;
-        recordTransportReload(spent + 1);
         ZQ.reportState(ZQ.currentState('transport-failed'));
         ZQ.scheduleRetry(1200);
     };

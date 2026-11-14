@@ -16,7 +16,7 @@ const SOURCE = fs.readFileSync(path.join(__dirname, '../../src/content/engine.js
 
 // `relayOk` is what the worker answers to the health probe. `send` records every message so the
 // recovery path can be read from the outside.
-function load({ relayOk = false, enabled = true, alive = true, rotating = false, storage } = {}) {
+function load({ relayOk = false, enabled = true, alive = true, rotating = false, storage, getFails = false, setFails = false, silentWrite = false } = {}) {
     // The reload budget lives in localStorage, so a test that spans a reload has to share this map.
     const store = storage || new Map();
     const sends = [];
@@ -75,8 +75,14 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false,
         },
         document: {},
         localStorage: {
-            getItem: key => (store.has(key) ? store.get(key) : null),
-            setItem: (key, value) => store.set(key, String(value)),
+            getItem: key => {
+                if (getFails) throw new Error('getItem blocked');
+                return store.has(key) ? store.get(key) : null;
+            },
+            setItem: (key, value) => {
+                if (setFails) throw new Error('setItem blocked');
+                if (!silentWrite) store.set(key, String(value));
+            },
             removeItem: key => store.delete(key)
         },
         location: { reload: () => reloads.push(Date.now()) },
@@ -201,6 +207,69 @@ check('the reload budget survives the reload it is bounding', async () => {
 
     assert.equal(second.reloads.length, 0, 'the budget is already spent, so no second reload');
     assert.deepEqual(second.statuses(), ['transport-failed'], 'the state is still reported');
+});
+
+check('the two-reload budget holds across three distinct page loads', async () => {
+    const shared = new Map();
+    const first = load({ relayOk: true, storage: shared });
+    await first.announce();
+    first.fireTimers();
+    assert.equal(first.reloads.length, 1);
+
+    const second = load({ relayOk: true, storage: shared });
+    await second.announce();
+    second.fireTimers();
+    assert.equal(second.reloads.length, 1, 'the second reload is within the configured budget');
+    assert.equal(second.stored(), 2);
+
+    const third = load({ relayOk: true, storage: shared });
+    await third.announce();
+    third.fireTimers();
+    assert.equal(third.reloads.length, 0, 'a new page load must not reset the budget');
+    assert.deepEqual(third.statuses(), ['transport-failed']);
+});
+
+check('blocked localStorage reads report a failure without a reload', async () => {
+    const page = load({ relayOk: true, getFails: true });
+    await page.announce();
+    page.fireTimers();
+    assert.equal(page.reloads.length, 0);
+    assert.deepEqual(page.statuses(), ['transport-failed']);
+});
+
+check('blocked localStorage writes report a failure without a reload', async () => {
+    const page = load({ relayOk: true, setFails: true });
+    await page.announce();
+    page.fireTimers();
+    assert.equal(page.reloads.length, 0);
+    assert.deepEqual(page.statuses(), ['transport-failed']);
+});
+
+check('silently ignored storage writes do not permit a reload', async () => {
+    const page = load({ relayOk: true, silentWrite: true });
+    await page.announce();
+    page.fireTimers();
+    assert.equal(page.reloads.length, 0);
+    assert.deepEqual(page.statuses(), ['transport-failed']);
+});
+
+check('corrupt reload records fail closed', async () => {
+    for (const bad of ['not json', '{"count":null,"at":1}', '{"count":-1,"at":1}', '{"count":1,"at":0}']) {
+        const page = load({ relayOk: true, storage: new Map([['zqTransportReloads', bad]]) });
+        await page.announce();
+        page.fireTimers();
+        assert.equal(page.reloads.length, 0, `record ${bad} must not permit a reload`);
+        assert.deepEqual(page.statuses(), ['transport-failed']);
+    }
+});
+
+check('a future reload timestamp is invalid rather than an expired budget', async () => {
+    const future = JSON.stringify({ count: 1, at: Date.now() + 3600000 });
+    const page = load({ relayOk: true, storage: new Map([['zqTransportReloads', future]]) });
+    await page.announce();
+    page.fireTimers();
+    assert.equal(page.reloads.length, 0);
+    assert.deepEqual(page.statuses(), ['transport-failed']);
 });
 
 check('the budget expires so a later failure can still recover', async () => {
