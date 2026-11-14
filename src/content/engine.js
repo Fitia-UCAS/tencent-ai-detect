@@ -75,6 +75,10 @@
     // reload happens on its own once the challenge is gone.
     ZQ.CAPTCHA_WAIT_MS = 2000;
 
+    // How soon to look again after a rotation found no relay. The reconnect was just requested, so
+    // this only has to cover the host starting its child.
+    ZQ.RELAY_RETRY_MS = 2500;
+
     ZQ.scheduleRetry = function (delayMs) {
         if (!ZQ.state.contextAlive) return;
         if (ZQ.state.retryTimer) clearTimeout(ZQ.state.retryTimer);
@@ -160,6 +164,22 @@
         if (!viaRelay) {
             ZQ.state.rotating = false;
             ZQ.reportState(ZQ.currentState('relay-offline'));
+
+            // The keepalive alarm runs once a minute, so waiting for it meant the page could sit
+            // untouched for most of a minute after the relay died. Asking for a reconnect now and
+            // trying again shortly is what makes recovery feel immediate instead of stalled.
+            //
+            // This must not go through scheduleRetry(): that one reloads the page, and without a
+            // relay a reload cannot change the address either, so retrying by reload would loop
+            // forever. What is retried here is the rotation attempt itself.
+            ZQ.send({ action: 'relayEnsure' });
+
+            if (ZQ.state.retryTimer) clearTimeout(ZQ.state.retryTimer);
+            ZQ.state.retryTimer = setTimeout(() => {
+                if (!ZQ.state.contextAlive || !ZQ.state.autoRefresh) return;
+                ZQ.rotate(reason);
+            }, ZQ.RELAY_RETRY_MS);
+
             return;
         }
 
@@ -179,8 +199,9 @@
         ZQ.reportState(ZQ.currentState('rotated'));
 
         // The reload opens a fresh socket. The reloaded page runs identity.js again, which mints a
-        // new address, so the reload - not the relay - is what rotates the identity.
-        ZQ.scheduleRetry(1200);
+        // new address, so the reload - not the relay - is what rotates the identity. Kept short
+        // because the relay is already confirmed up at this point; nothing is being waited on.
+        ZQ.scheduleRetry(400);
     };
 
     // Only a genuine quota hit justifies a reload. A captcha failure belongs to the user, and an
@@ -204,7 +225,10 @@
     //
     // rotate() refuses while a rotation is in flight and inside its cooldown, so a tick during a
     // pending reload cannot stack another one.
-    ZQ.WATCHDOG_MS = 5000;
+    // How often the page is re-read. Two seconds keeps a spent allowance from sitting on screen
+    // while the user wonders whether anything is happening; rotate() already refuses while one is
+    // in flight, so a short interval cannot stack reloads.
+    ZQ.WATCHDOG_MS = 2000;
 
     // Returns a function that stops the watchdog, so a dead context can be shut down explicitly.
     // The active stop function is also kept on the namespace, which lets callers that never saw

@@ -34,6 +34,21 @@ export function createMessageRouter({ chrome, keys, keepAlive, host, health, usa
             return true;
         },
 
+        // Asks for a reconnect right now instead of on the next alarm tick.
+        //
+        // The keepalive alarm runs once a minute, so a relay that died between two ticks left the
+        // page doing nothing for up to a minute after the user noticed the wait. The content script
+        // calls this the moment a rotation finds no relay, so recovery starts immediately; the
+        // reconnect itself is the same one the alarm performs.
+        relayEnsure(request, sender, respond) {
+            keepAlive.ensureAlarm();
+            keepAlive.keepAlive()
+                .then(() => health.ping())
+                .then(body => respond({ status: 'success', ok: !!(body && body.ok) }))
+                .catch(error => respond({ status: 'error', ok: false, message: String(error?.message || error) }));
+            return true;
+        },
+
         logReset(request, sender, respond) {
             usage.logReset({ sender, ip: request.ip, reason: request.reason });
             respond({ status: 'success' });

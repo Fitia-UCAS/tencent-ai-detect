@@ -43,6 +43,8 @@
     "test:relay-terminal-once": "node tests/integration/test-relay-terminal-once.cjs",
     "clean:processes": "node tools/clean-processes.cjs",
     "doctor": "node tools/doctor.cjs",
+    "switch:dev": "node scripts/switch-branch.cjs dev",
+    "switch:main": "node scripts/switch-branch.cjs main",
     "test:clean-processes": "node tests/unit/test-clean-processes.cjs",
     "test:keepalive-recovery": "node tests/unit/test-keepalive-recovery.cjs",
     "test:auto-detect": "node tests/unit/test-auto-detect.cjs",
