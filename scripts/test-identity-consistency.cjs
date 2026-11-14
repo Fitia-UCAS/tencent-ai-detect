@@ -149,7 +149,7 @@ check('the page reloads before the fifth handshake is attempted', () => {
     // Waiting for the refusal instead would show the user "Invalid request" and, worse, tempt a
     // rotate-on-ambiguous design, which is what once produced a reload loop.
     assert.match(content, /const USES_PER_IDENTITY = 4;/, 'the measured limit must be stated once');
-    assert.match(content, /if \(loadUses >= USES_PER_IDENTITY\)/, 'the reload must be driven by the count');
+    assert.match(content, /if \(identityUses\(\) >= USES_PER_IDENTITY\)/, 'the reload must be driven by the stored count');
     assert.match(content, /rotate\('identity-exhausted'\)/, 'and it must actually rotate');
 });
 
@@ -157,7 +157,12 @@ check('a detection click counts towards the identity', () => {
     const start = content.indexOf('function monitorUsage');
     const handler = content.slice(start, content.indexOf('// Registering listeners', start));
     assert.ok(handler.length > 0, 'the click handler must be locatable');
-    assert.ok(handler.includes('loadUses += 1'), 'each detection click must consume a use');
+
+    // The count lives in localStorage and is bumped by shim.js as each relay socket opens. The click
+    // handler only reads it: a local `+= 1` would both miscount (one page load serves several
+    // detections) and, when the variable was never declared, throw on every click.
+    assert.ok(handler.includes('identityUses()'), 'the click handler must read the stored count');
+    assert.ok(!/loadUses/.test(content), 'no local counter may shadow the stored one');
 });
 
 // --- the validator itself -------------------------------------------------

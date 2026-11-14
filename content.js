@@ -225,6 +225,13 @@
         '今日剩余次数:0'
     ];
 
+    // The counter lives inside the detect button — "立即检测(今日剩余5次)" — and its wording changes
+    // as the count falls, ending as "今日次数已用完". The enumerated list above can never cover every
+    // variant: that final wording was missing from it, so a spent allowance read as 'ok' and rotation
+    // never started. The number is parsed instead, and exhaustion is matched by pattern.
+    const QUOTA_REMAINING = /今日剩余\s*(\d+)\s*次/;
+    const QUOTA_EXHAUSTED = /(今日免费次数已用完|已达到今日免费检测次数|次数已用完|次数用尽|额度已用完|今日剩余次数\s*[:：]\s*0)/;
+
     const CAPTCHA_PHRASES = [
         '验证失败',
         '请完成验证',
@@ -293,8 +300,27 @@
         return phrases.some(phrase => text.includes(phrase));
     }
 
+    // Returns how many detections the page says are left, and whether it says none are.
+    // `remaining` is null when the page shows no counter at all.
+    function readQuota(text) {
+        const source = typeof text === 'string' ? text : pageText();
+        const counted = source.match(QUOTA_REMAINING);
+        const remaining = counted ? Number(counted[1]) : null;
+
+        // A visible positive count wins over any stale exhausted wording left elsewhere on the page:
+        // the counter is the live value, and acting on a stale one would reload needlessly.
+        if (remaining !== null && remaining > 0) return { remaining: remaining, exhausted: false };
+
+        if (remaining === 0) return { remaining: 0, exhausted: true };
+        if (QUOTA_EXHAUSTED.test(source)) return { remaining: remaining, exhausted: true };
+
+        return { remaining: remaining, exhausted: false };
+    }
+
     function pageState() {
-        if (matched(QUOTA_PHRASES)) return 'quota';
+        const text = pageText();
+
+        if (readQuota(text).exhausted) return 'quota';
         if (matched(CAPTCHA_PHRASES)) return 'captcha';
         if (matched(AMBIGUOUS_PHRASES)) return 'ambiguous';
         return 'ok';
@@ -514,8 +540,6 @@
                 className.includes('detect') || className.includes('check')) {
                 sendMessage({ action: 'usageIncrement' });
 
-                loadUses += 1;
-
                 setTimeout(() => {
                     if (!enabled || rotating) return;
 
@@ -524,7 +548,7 @@
                     // moves the page onto a fresh address, so the user never sees that refusal.
                     // Deciding on the count rather than on the refusal keeps rotate() off an
                     // ambiguous message, which is what once caused a reload loop.
-                    if (loadUses >= USES_PER_IDENTITY) {
+                    if (identityUses() >= USES_PER_IDENTITY) {
                         rotate('identity-exhausted');
                         return;
                     }
@@ -533,6 +557,43 @@
                 }, 2500);
             }
         });
+    }
+
+    // A page that already shows a spent allowance and then sits still produces no DOM change and no
+    // click, so neither trigger above fires — and that is the common case, because the user opens the
+    // page after the allowance is gone. This asks on a timer instead of waiting to be told.
+    //
+    // rotate() refuses while a rotation is in flight and inside its cooldown, so a tick during a
+    // pending reload cannot stack another one.
+    const WATCHDOG_MS = 5000;
+
+    let watchdogTimer = null;
+
+    function startWatchdog(intervalMs) {
+        const every = intervalMs || WATCHDOG_MS;
+
+        const stop = () => {
+            if (watchdogTimer) clearInterval(watchdogTimer);
+            watchdogTimer = null;
+        };
+
+        const tick = () => {
+            // A reloading extension leaves this script running with every chrome.* call throwing; it
+            // must stop asking rather than keep scheduling reloads.
+            if (!contextAlive) {
+                stop();
+                return;
+            }
+
+            if (!enabled || !autoRefresh || rotating) return;
+            if (pageState() !== 'quota') return;
+
+            handlePageState('watchdog');
+        };
+
+        stop();
+        watchdogTimer = setInterval(tick, every);
+        return stop;
     }
 
     // Registering listeners also throws on a dead context, so the whole setup is
@@ -600,4 +661,8 @@
     // A fresh load starts on whatever address the background already installed;
     // report it so the panel shows the live value.
     reportState(currentState(signedIn() ? 'signed-in' : 'idle'));
+
+    // Ask on a timer too, so a page that is already exhausted and then sits still
+    // rotates without the user clicking anything.
+    startWatchdog();
 })();
