@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tencent AI Detect</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="brandbar">
+      <img src="../../icon.png" alt="">
+      <h1>Tencent AI Detect</h1>
+    </header>
+
+    <main class="hero">
+      <div class="emblem" aria-hidden="true">
+        <img src="../../icon.png" alt="">
+      </div>
+    </main>
+
+    <div class="dock-wrap">
+      <section class="dock" aria-label="Tencent AI Detect">
+        <!-- Shown only when the native host failed to start. Without it a missing registration is
+             indistinguishable from a healthy idle extension: nothing happens and nothing says why. -->
+        <div id="host-alert" class="host-alert" role="alert" hidden>
+          <strong>Local relay host is not registered</strong>
+          <span id="host-alert-detail" class="host-alert-detail"></span>
+          <code>npm run host:register</code>
+        </div>
+
+        <button id="open-site" class="primary" type="button">
+          <span>Open detection page</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12h14M14 7l5 5-5 5"></path>
+          </svg>
+        </button>
+
+        <div class="utility">
+          <div class="refresh-control">
+            <span>Page state</span>
+            <span id="page-state" class="state-value" data-state="waiting">Waiting…</span>
+          </div>
+        </div>
+
+        <div class="utility">
+          <div class="refresh-control">
+            <span>Relay</span>
+            <button id="toggle-relay" class="switch active" type="button" role="switch" aria-checked="true" aria-label="Relay"></button>
+          </div>
+        </div>
+
+        <div class="utility">
+          <div class="refresh-control">
+            <span>Auto refresh</span>
+            <button id="toggle-refresh" class="switch active" type="button" role="switch" aria-checked="true" aria-label="Auto refresh"></button>
+          </div>
+          <button id="reset-usage" class="secondary" type="button">Reset count</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="notice" class="toast" role="status" aria-live="polite"></div>
+  </div>
+  <script src="index.js"></script>
+</body>
+</html>

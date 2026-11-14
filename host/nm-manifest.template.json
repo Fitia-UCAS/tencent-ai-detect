@@ -1,0 +1,9 @@
+{
+  "name": "com.afei.tencent_ai_detect_relay",
+  "description": "Local relay for Tencent AI Detect",
+  "path": "__LAUNCHER__",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://kdjgfockdecdbadmpbjgflmiffdiffhp/"
+  ]
+}

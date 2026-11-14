@@ -1,0 +1,70 @@
+{
+  "manifest_version": 3,
+  "name": "Tencent AI Detect",
+  "version": "1.5.3",
+  "description": "Browser extension for Tencent AI Detect.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvgdtM1hOl60CCRMIvlkYpjT6/3zHo/P0HreAfGS7FjkHBpvzY3nn6llexHNshsu/iDCkCA29QwmzoJxH87j+yOWoG+9G3KaqoxJKTCgM/14xp2q3YlOLQM+bMbgTVN4Q6H8vAw1lm0n/7GfKr/DomhmpQfKbBOS+oWbNagTDalYq4qFOta/ctYripbeu2I/WTr0Hwz3NgdEavQjt/pxx3uMmim1tRqOyV0hmVVB304pCy39QkDRus/fMuSWFNmxKKPgto4B90E29JSLnJWLEKBO+PNhNUKR02YwCVVGoWOce+BAT9QHTWFSLHKg7Id+Mjl4Xxc53Cvu6ODtDEyiKfQIDAQAB",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "activeTab",
+    "notifications",
+    "contextMenus",
+    "sidePanel",
+    "nativeMessaging",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://matrix.tencent.com/ai-detect/*",
+    "https://matrix.tencent.com/*",
+    "https://captcha.gtimg.com/*",
+    "http://127.0.0.1:9420/*"
+  ],
+  "background": {
+    "service_worker": "src/background/index.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://matrix.tencent.com/ai-detect/*",
+        "https://matrix.tencent.com/*"
+      ],
+      "js": [
+        "src/shim/index.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://matrix.tencent.com/ai-detect/*",
+        "https://matrix.tencent.com/*"
+      ],
+      "js": [
+        "src/content/core.js",
+        "src/content/detection.js",
+        "src/content/engine.js",
+        "src/content/index.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "Open Tencent AI Detect",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}
