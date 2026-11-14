@@ -586,6 +586,18 @@
             }
 
             if (!enabled || !autoRefresh || rotating) return;
+
+            // The address limit is checked here, not only after a click. Detecting the button by its
+            // text is best-effort - a variant that does not say "检测" and whose class carries neither
+            // "detect" nor "check" leaves the count rising with nothing watching it. Then the fifth
+            // handshake is refused and the page shows "Invalid request", which no rotation can undo
+            // because the address is already burned. Reading the stored count makes the trigger exact
+            // no matter where the detection was started from.
+            if (identityUses() >= USES_PER_IDENTITY) {
+                rotate('identity-exhausted');
+                return;
+            }
+
             if (pageState() !== 'quota') return;
 
             handlePageState('watchdog');
