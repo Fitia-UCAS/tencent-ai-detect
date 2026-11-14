@@ -134,6 +134,11 @@
     // rotates without the user clicking anything.
     if (typeof ZQ.startWatchdog === 'function') ZQ.startWatchdog();
 
+    // And drive the detection itself: the watchdog only keeps the allowance fresh, which is useless
+    // if nothing ever asks for a detection. This is what makes the extension hands-off - paste once
+    // and it runs, rotates, restores the text and runs again.
+    if (typeof ZQ.startAuto === 'function') ZQ.startAuto();
+
     // A fresh load runs on whatever address the background already installed; report it so the
     // panel shows the live value instead of a stale one.
     ZQ.reportState(ZQ.currentState(ZQ.signedIn() ? 'signed-in' : 'idle'));

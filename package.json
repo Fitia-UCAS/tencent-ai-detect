@@ -45,6 +45,7 @@
     "doctor": "node tools/doctor.cjs",
     "test:clean-processes": "node tests/unit/test-clean-processes.cjs",
     "test:keepalive-recovery": "node tests/unit/test-keepalive-recovery.cjs",
+    "test:auto-detect": "node tests/unit/test-auto-detect.cjs",
     "test:session-trace": "node tests/unit/test-session-trace-analysis.cjs",
     "test:relay-config": "node tests/unit/test-relay-config.cjs",
     "test:sidepanel-reset-count": "node tests/unit/test-sidepanel-reset-count.cjs",

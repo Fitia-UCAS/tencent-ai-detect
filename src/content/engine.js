@@ -89,6 +89,11 @@
                 return;
             }
 
+            // The reload discards the editor's contents, so whatever was pasted is kept first and
+            // put back on the other side. Without this a rotation would silently wipe the text the
+            // user was in the middle of checking.
+            if (typeof ZQ.saveDraft === 'function') ZQ.saveDraft();
+
             location.reload();
         }, delayMs);
     };

@@ -51,6 +51,7 @@
         "src/content/identity.js",
         "src/content/detection.js",
         "src/content/engine.js",
+        "src/content/auto.js",
         "src/content/index.js"
       ],
       "run_at": "document_start"
