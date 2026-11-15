@@ -16,6 +16,7 @@ const LABELS = {
     captcha: 'Verification needed',
     ambiguous: 'Check the page',
     'identity-unconfirmed': 'Address rule not installed — press retries',
+    'refusal-pending': 'Last result refused — reload the page to retry',
     'signed-in': 'Signed in',
     rotated: 'Rotated',
     'relay-offline': 'Relay offline',

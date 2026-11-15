@@ -102,9 +102,29 @@
     // Solving a challenge is what the detection was waiting on, so the response is still in flight
     // for a moment after the container disappears. Everything that would reload the page asks this
     // first; without it the reload beats the answer and the result is never seen.
+    //
+    // The wait is bounded by time, not by a call count. Measured: two calls 18ms apart exhausted a
+    // count-based budget and the reload went ahead while the answer was still coming - the guard was
+    // there and did nothing. A deadline cannot be spent by being asked twice.
+    ZQ.state.challengeDeferUntil = 0;
+
     ZQ.awaitingAfterChallenge = function awaitingAfterChallenge() {
         if (!ZQ.state.challengeSeenAt) return false;
+
+        const deadline = ZQ.state.challengeDeferUntil;
+        if (deadline && Date.now() < deadline) return true;
+
         return Date.now() - ZQ.state.challengeSeenAt < ZQ.CHALLENGE_SETTLE_MS;
+    };
+
+    // Arms the wait from now, once. Called at the moment a challenge closes - the point the answer
+    // starts travelling - so the window is not spent while the user is still solving.
+    ZQ.armChallengeDeferral = function armChallengeDeferral() {
+        if (!ZQ.state.challengeDeferUntil) {
+            ZQ.state.challengeDeferUntil = Date.now() + ZQ.CHALLENGE_SETTLE_MS;
+        }
+
+        return Math.max(0, ZQ.state.challengeDeferUntil - Date.now());
     };
 
     ZQ.scheduleRetry = function scheduleRetry(delayMs) {
@@ -130,14 +150,22 @@
             // wait for the answer, and a guard that only samples "is it open now" cannot see it.
             if (ZQ.state.challengeWasOpen) {
                 ZQ.state.challengeWasOpen = false;
+
+                // The deadline is set here, at the moment the challenge closes, because that is when
+                // the answer starts travelling. Setting it earlier - when the challenge opened - would
+                // spend the wait while the user was still solving.
+                ZQ.state.challengeDeferUntil = Date.now() + ZQ.CHALLENGE_SETTLE_MS;
+
                 ZQ.trace('challenge-closed', {
                     openForMs: Date.now() - (ZQ.state.challengeSeenAt || Date.now()),
-                    state: ZQ.pageState()
+                    state: ZQ.pageState(),
+                    waitMs: ZQ.CHALLENGE_SETTLE_MS
                 }, true);
             }
 
             // A challenge that has just closed is still worth waiting for: solving it is what the
             // detection was waiting on, so the answer is on its way. Reloading now would discard it.
+            // awaitingAfterChallenge is bounded by a deadline, so a page that never answers rotates.
             if (ZQ.awaitingAfterChallenge()) {
                 ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
                 return;
@@ -153,7 +181,8 @@
             ZQ.trace('reload', {
                 state: ZQ.pageState(),
                 uses: ZQ.identityUses(),
-                rotations: ZQ.readState().rotations
+                rotations: ZQ.readState().rotations,
+                pageAgeMs: typeof ZQ.pageAge === 'function' ? ZQ.pageAge() : null
             }, true);
 
             location.reload();
@@ -212,7 +241,8 @@
         if (ZQ.awaitingAfterChallenge()) {
             ZQ.trace('rotate-deferred', {
                 reason: 'awaiting-answer',
-                sinceChallengeMs: Date.now() - (ZQ.state.challengeSeenAt || 0)
+                sinceChallengeMs: Date.now() - (ZQ.state.challengeSeenAt || 0),
+                waitLeftMs: Math.max(0, (ZQ.state.challengeDeferUntil || 0) - Date.now())
             });
             ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
             return;
@@ -273,6 +303,12 @@
             ip: 'relay',
             transport: 'relay'
         });
+
+        // A rotation is a fresh start: the challenge bookkeeping belongs to the load being replaced,
+        // and carrying it across would make the next load believe an answer is still outstanding.
+        ZQ.state.challengeSeenAt = 0;
+        ZQ.state.challengeWasOpen = false;
+        ZQ.state.challengeDeferUntil = 0;
 
         ZQ.clearFp();
         ZQ.send({ action: 'logReset', ip: 'relay', reason: reason });

@@ -26,7 +26,36 @@
         autoRefresh: true,
         rotating: false,
         retryTimer: null,
-        contextAlive: true
+        contextAlive: true,
+        // Navigation timing origin for this document, in ms. The gap between a page becoming ready and
+        // the press is a real variable: the one successful run on record pressed 6167ms after load,
+        // and pressing earlier may spend the handshake on a page whose own client is still starting.
+        loadedAt: (function () {
+            try {
+                if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') {
+                    return Date.now() - performance.now();
+                }
+            } catch (e) {
+                // Fall through: a missing performance object just means the clock starts now.
+            }
+
+            return Date.now();
+        })()
+    };
+
+    // How long this document has existed, measured from its own navigation start. Distinct from
+    // "since the extension started": a content script can be injected into a tab that has been open
+    // for minutes, which is the case where the page is old and the script is new.
+    ZQ.pageAge = function pageAge() {
+        try {
+            if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') {
+                return Math.round(performance.now());
+            }
+        } catch (e) {
+            // Fall through to the wall clock.
+        }
+
+        return Date.now() - ZQ.state.loadedAt;
     };
 
     function isInvalidated(error) {

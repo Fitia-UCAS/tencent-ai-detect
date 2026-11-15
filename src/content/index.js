@@ -107,12 +107,37 @@
                 return;
             }
 
+            // The page is still showing a refusal from an earlier attempt.
+            //
+            // Pressing again on that screen sends a request from a session the site has already
+            // refused, and a run of those is the clearest signal a rate limiter has: the trail shows
+            // presses at 20s and 45s on an unchanged "Invalid request" panel, each one costing a
+            // handshake and returning the same word. The press is stopped and the page is offered a
+            // fresh start instead, which is the one action that can change the outcome.
+            //
+            // Only the ambiguous state is caught here. 'captcha' is left alone: the challenge is the
+            // user's to solve and the page handles the press, and a solved challenge sometimes clears
+            // without the panel ever going ambiguous.
+            if (ZQ.pageState() === 'ambiguous') {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+
+                ZQ.trace('press-blocked', { reason: 'stale-refusal', uses: ZQ.identityUses() });
+                ZQ.reportState(ZQ.currentState('refusal-pending'));
+                return;
+            }
+
             ZQ.trace('press', {
                 state: ZQ.pageState(),
                 uses: ZQ.identityUses(),
                 spent: ZQ.identitySpent(),
                 challengeOpen: ZQ.captchaOpen(),
-                challengeSeenAt: ZQ.state.challengeSeenAt || 0
+                challengeSeenAt: ZQ.state.challengeSeenAt || 0,
+                // How long this document had existed at the moment of the press. The one successful
+                // run on record pressed 6167ms after load; pressing earlier may spend the handshake on
+                // a page whose own client has not finished starting, which would look like a refusal.
+                pageAgeMs: typeof ZQ.pageAge === 'function' ? ZQ.pageAge() : null
             }, true);
 
             ZQ.send({ action: 'usageIncrement' });
@@ -122,7 +147,8 @@
 
                 ZQ.trace('press-settle', {
                     state: ZQ.pageState(),
-                    challengeOpen: ZQ.captchaOpen()
+                    challengeOpen: ZQ.captchaOpen(),
+                    pageAgeMs: typeof ZQ.pageAge === 'function' ? ZQ.pageAge() : null
                 }, true);
 
                 ZQ.handlePageState('quota-after-click');
@@ -203,7 +229,15 @@
         identity,
         pageState: typeof ZQ.pageState === 'function' ? ZQ.pageState() : null,
         quota: typeof ZQ.readQuota === 'function' ? ZQ.readQuota() : null,
-        autoRefresh: ZQ.state.autoRefresh
+        autoRefresh: ZQ.state.autoRefresh,
+        readyState: (function () {
+            try {
+                return document.readyState;
+            } catch (e) {
+                return null;
+            }
+        })(),
+        pageAgeMs: typeof ZQ.pageAge === 'function' ? ZQ.pageAge() : null
     });
 
     ZQ.publishIdentity(identity);
