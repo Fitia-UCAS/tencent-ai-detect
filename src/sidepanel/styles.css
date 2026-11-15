@@ -307,17 +307,20 @@
       gap: 2px;
     }
 
+    /* The only control on the panel, so it has to read as one: an icon with no container is
+       indistinguishable from decoration, and the disabled state has to stay recognisably a control
+       rather than fade into the card. The box uses the same border and radius as the cards. */
     .card-action {
       display: inline-grid;
       width: 27px;
       height: 27px;
       place-items: center;
-      border: 0;
-      border-radius: 3px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
       color: var(--muted);
-      background: transparent;
+      background: var(--white);
       cursor: pointer;
-      transition: color .14s ease, background .14s ease;
+      transition: color .14s ease, background .14s ease, border-color .14s ease;
     }
 
     .card-action svg {
@@ -326,6 +329,7 @@
     }
 
     .card-action:hover:not(:disabled) {
+      border-color: var(--brand);
       color: var(--brand-hover);
       background: var(--brand-soft);
     }
@@ -335,7 +339,11 @@
       outline-offset: 1px;
     }
 
+    /* Still a button, just not one that will do anything: the box stays, everything inside recedes. */
     .card-action:disabled {
+      border-color: var(--line);
+      color: var(--muted);
+      background: var(--white);
       cursor: default;
       opacity: .38;
     }
