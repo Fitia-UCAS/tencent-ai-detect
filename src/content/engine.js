@@ -325,10 +325,30 @@
 
     // Only a genuine quota hit justifies a reload. A captcha failure belongs to the user, and an
     // ambiguous refusal is reported without acting.
+    //
+    // The quota branch is guarded by a cooldown because this is called from a MutationObserver, which
+    // fires on every DOM change - and a page mid-detection changes constantly. Measured over nine
+    // minutes of a single session: 176 reloads and 138 loads, peaking at 46 reloads in one minute.
+    // A reload destroys the page that was about to report the real state, the fresh page looks
+    // exhausted again for a moment, and the cycle repeats. The cooldown is what turns that into at
+    // most one reload per window, so the next page gets to settle and say what it actually is.
+    ZQ.QUOTA_ROTATE_COOLDOWN_MS = 30000;
+
     ZQ.handlePageState = function handlePageState(reason) {
         const state = ZQ.pageState();
 
         if (state === 'quota') {
+            // Read from storage, not memory: a reload replaces this script, and an in-memory stamp
+            // would let the fresh page rotate again immediately - which is the cycle, not the fix.
+            const held = ZQ.readState();
+            const since = Date.now() - (Number(held.lastRotationAt) || 0);
+
+            if (since < ZQ.QUOTA_ROTATE_COOLDOWN_MS) {
+                ZQ.trace('quota-cooldown', { since, reason });
+                ZQ.reportState(ZQ.currentState('quota'));
+                return;
+            }
+
             ZQ.rotate(reason);
             return;
         }

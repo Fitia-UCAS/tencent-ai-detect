@@ -85,7 +85,57 @@ function extractTrails(payload) {
         }
     }
 
-    return null;
+    // The trail can outgrow a single LevelDB record once the frames are kept whole, and a record that
+    // spans two blocks arrives here truncated. Recovering the events that did parse beats reporting
+    // nothing: a diagnosis needs the sequence, and a missing tail is visible in the gaps.
+    return salvageEvents(payload.slice(start));
+}
+
+// Pulls complete event objects out of a truncated trail.
+function salvageEvents(text) {
+    const events = [];
+    const marker = '"events":[';
+
+    const at = text.indexOf(marker);
+    if (at === -1) return null;
+
+    let depth = 0;
+    let start = -1;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = at + marker.length - 1; i < text.length; i += 1) {
+        const ch = text[i];
+
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inString = false;
+            continue;
+        }
+
+        if (ch === '"') inString = true;
+        else if (ch === '{') {
+            if (depth === 0) start = i;
+            depth += 1;
+        } else if (ch === '}') {
+            depth -= 1;
+            if (depth === 0 && start !== -1) {
+                try {
+                    events.push(JSON.parse(text.slice(start, i + 1)));
+                } catch (e) {
+                    // A half-written event is dropped; the rest still tell the story.
+                }
+                start = -1;
+            }
+        } else if (ch === ']' && depth === 0) {
+            break;
+        }
+    }
+
+    if (events.length === 0) return null;
+
+    return { partial: true, events };
 }
 
 const records = readRecords(STORE);
