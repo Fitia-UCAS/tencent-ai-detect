@@ -13,7 +13,8 @@ const path = require('node:path');
 
 const { sleep, cdp, launch } = require('../browser-harness.cjs');
 
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 const EXT = path.resolve(__dirname, '..', '..');
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 const SIZE = Number(process.env.SIZE || 200000);

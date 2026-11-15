@@ -8,9 +8,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
-const STORE = path.join(
-    process.env.LOCALAPPDATA || 'C:/Users/aFei/AppData/Local',
-    'Microsoft/Edge/User Data/Default/Local Extension Settings', EXT_ID);
+const { edgeStoreDir } = require('../machine.cjs');
+const STORE = edgeStoreDir(EXT_ID);
 
 let text = '';
 for (const name of fs.readdirSync(STORE)) {

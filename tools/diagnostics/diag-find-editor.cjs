@@ -7,7 +7,8 @@
 const path = require('node:path');
 const fs = require('node:fs');
 
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 const PORT = 9387;
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 const OUT = path.join(__dirname, '..', '..', 'tmp-diag');

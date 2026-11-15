@@ -4,7 +4,8 @@
 // fully rendered, yet a large editable box is plainly on screen. Waiting on the
 // right selector has been a dead end, so this asks the browser which element is
 // actually at that point and walks up its ancestry.
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 const PORT = 9385;
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 const OUT = require('node:path').join(__dirname, '..', 'tmp-diag');

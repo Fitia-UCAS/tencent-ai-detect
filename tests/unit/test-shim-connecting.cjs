@@ -6,9 +6,9 @@
 // exact condition instead: it reaches into the shimmed socket and calls send()
 // while readyState is still CONNECTING, then reports any uncaught exception.
 const path = require('node:path');
-const fs = require('node:fs');
 
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../../tools/machine.cjs');
+const BROWSER = resolveBrowser();
 const PORT = 9389;
 const EXT = path.join(__dirname, '..', '..');
 const SITE = 'https://matrix.tencent.com/ai-detect/';

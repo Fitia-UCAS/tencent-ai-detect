@@ -1,7 +1,8 @@
 // End-to-end through the relay: the extension must redirect the page's socket,
 // the relay must rotate the client address, and no debugger may be attached.
 const path = require('path');
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../../tools/machine.cjs');
+const BROWSER = resolveBrowser();
 const EXT = path.resolve(__dirname, '..', '..');
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 const PORT = 9374;

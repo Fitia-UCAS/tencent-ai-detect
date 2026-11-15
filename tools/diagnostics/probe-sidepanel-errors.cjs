@@ -12,7 +12,8 @@ const { launch, httpJson, cdp, sleep } = require('../browser-harness.cjs');
 
 const EXT = path.resolve(__dirname, '..', '..');
 const PORT = Number(process.env.ZQ_DIAG_PORT || 9333);
-const BROWSER = process.env.ZQ_BROWSER || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 
 const extensionIdFromProfile = profile => {
     for (const name of ['Default/Preferences', 'Default/Secure Preferences']) {

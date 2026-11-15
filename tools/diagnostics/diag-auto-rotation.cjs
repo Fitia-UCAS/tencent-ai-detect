@@ -7,9 +7,12 @@
 // A fresh browser profile usually still has allowance, so the run reports which state it found.
 // When the page reports allowance it says so instead of pretending to have tested exhaustion.
 const { sleep, cdp, launch } = require('../browser-harness.cjs');
+const path = require('node:path');
 
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const ROOT = 'E:/edge-extensions/tencent-ai-detect';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
+// The checkout this script lives in; the browser has to be pointed at it by absolute path.
+const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 9413;
 const EXPECTED_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 const DETECT_URL = 'https://matrix.tencent.com/ai-detect/';

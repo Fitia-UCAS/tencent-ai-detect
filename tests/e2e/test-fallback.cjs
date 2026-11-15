@@ -5,7 +5,8 @@
 // that a failed relay is surfaced instead of silently opening the origin directly.
 const path = require('node:path');
 
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../../tools/machine.cjs');
+const BROWSER = resolveBrowser();
 const EXT = path.resolve(__dirname, '..', '..');
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 const PORT = 9378;

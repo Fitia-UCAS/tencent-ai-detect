@@ -10,7 +10,8 @@ const net = require('node:net');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 const EXT = path.resolve(__dirname, '..', '..');
 const PORT = 9387;
 const RELAY_PORT = 9420;

@@ -9,7 +9,8 @@
 // so each stage is read back, and the request header is taken from what the browser really sends.
 const path = require('node:path');
 
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../../tools/machine.cjs');
+const BROWSER = resolveBrowser();
 const EXT = path.resolve(__dirname, '..', '..');
 const EXT_ID = process.env.EXT_ID || 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 const PORT = Number(process.env.IDENTITY_PORT || 9395);

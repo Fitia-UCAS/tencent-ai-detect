@@ -15,7 +15,6 @@
 // Each tab is checked against its OWN rules, not against the newest rule set, because the rules are
 // per tab now. Divergence is the failure condition: it means one of these tabs will be refused.
 const path = require('node:path');
-const fs = require('node:fs');
 const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
 
 const EXT = path.resolve(__dirname, '..', '..');
@@ -23,10 +22,8 @@ const PORT = 9486;
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 
-const EDGE = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-].find(p => fs.existsSync(p));
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 
 async function findWorker() {
     for (let i = 0; i < 40; i += 1) {
@@ -130,13 +127,8 @@ async function readState(tab) {
 }
 
 (async () => {
-    if (!EDGE) {
-        console.log('Edge not found; nothing measured.');
-        return;
-    }
-
     const session = await launch({
-        browser: EDGE,
+        browser: BROWSER,
         port: PORT,
         prefix: 'zqmulti',
         args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`]

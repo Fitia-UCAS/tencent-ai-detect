@@ -15,7 +15,8 @@ const path = require('node:path');
 
 const { sleep, cdp, launch } = require('../browser-harness.cjs');
 
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 const SIZES = (process.env.SIZES || "1024,65536,131071,131072,131073,200000").split(",").map(Number);
 
 // Records frames as they arrive, per connection.

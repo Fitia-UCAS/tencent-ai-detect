@@ -8,7 +8,6 @@
 // window, so the marker disappearing is proof the page navigated rather than the text being
 // replaced in place.
 const path = require('node:path');
-const fs = require('node:fs');
 const http = require('node:http');
 const { sleep, httpJson, cdp, launch } = require('../../tools/browser-harness.cjs');
 
@@ -36,10 +35,8 @@ function relayHealthy(port = 9420) {
 }const PORT = 9481;
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 
-const EDGE = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-].find(p => fs.existsSync(p));
+const { resolveBrowser } = require('../../tools/machine.cjs');
+const BROWSER = resolveBrowser();
 
 const failures = [];
 const ok = text => process.stdout.write(`  ok    ${text}\n`);
@@ -49,10 +46,8 @@ const fail = text => {
 };
 
 (async () => {
-    if (!EDGE) throw new Error('Edge not found');
-
     const env = await launch({
-        browser: EDGE,
+        browser: BROWSER,
         port: PORT,
         prefix: 'zqe2e',
         args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`]

@@ -12,9 +12,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
-const STORE = path.join(
-    process.env.LOCALAPPDATA || 'C:/Users/aFei/AppData/Local',
-    'Microsoft/Edge/User Data/Default/Local Extension Settings', EXT_ID);
+const { edgeStoreDir } = require('../machine.cjs');
+const STORE = edgeStoreDir(EXT_ID);
 
 // Scans every record for a JSON payload that carries the trail key. A partial match is normal: records
 // are appended, so the newest version of the trail is the last one that parses.

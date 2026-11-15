@@ -1,7 +1,8 @@
 // Can a header be attached to the WebSocket handshake at all?
 // declarativeNetRequest cannot do it; this checks whether CDP can, which is
 // what the launcher-style tools rely on.
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 const PORT = 9336;
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 const XFF = '112.90.44.17';

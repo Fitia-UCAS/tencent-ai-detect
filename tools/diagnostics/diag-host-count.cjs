@@ -13,7 +13,8 @@ const { relayPidForPort } = require('../find-relay-pid.cjs');
 
 const RELAY_PORT = 9420;
 const EXT = path.join(__dirname, '..', '..');
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 const ROUNDS = Number(process.env.ROUNDS || 3);
 
 const { sleep, launch } = require('../browser-harness.cjs');

@@ -1,20 +1,17 @@
 // Lists every target the debugging port exposes, so the extension's own worker can be told apart
 // from Edge's built-in ones.
 const path = require('node:path');
-const fs = require('node:fs');
 const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
 
 const EXT = path.resolve(__dirname, '..', '..');
 const PORT = 9487;
 
-const EDGE = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-].find(p => fs.existsSync(p));
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 
 (async () => {
     const env = await launch({
-        browser: EDGE,
+        browser: BROWSER,
         port: PORT,
         prefix: 'zqcdp',
         args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`]

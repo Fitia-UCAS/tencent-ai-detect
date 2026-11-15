@@ -8,10 +8,13 @@
 // instead put the page in a different window than the panel, where chrome.tabs.query did not
 // report it, and the check silently ran against a missing tab.
 const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 const { sleep, cdp, launch } = require('../browser-harness.cjs');
 
-const BROWSER = process.env.CHROME_BIN || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const ROOT = 'E:/edge-extensions/tencent-ai-detect';
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
+// The checkout this script lives in; the browser has to be pointed at it by absolute path.
+const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 9405;
 const EXPECTED_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 const DETECT_URL = 'https://matrix.tencent.com/ai-detect/';

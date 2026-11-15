@@ -10,7 +10,6 @@
 // the observer because it sees the real socket regardless of which script wrapped it, and a
 // MAIN-world hook is used only to reach the socket instance so it can be closed.
 const path = require('node:path');
-const fs = require('node:fs');
 const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
 
 const EXT = path.resolve(__dirname, '..', '..');
@@ -19,10 +18,8 @@ const SITE = 'https://matrix.tencent.com/ai-detect/';
 const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 const OBSERVE_MS = 30000;
 
-const EDGE = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-].find(p => fs.existsSync(p));
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 
 // Installed before the page's own scripts. It does not change behaviour: it only keeps a reference
 // to every socket the page creates, so the probe can close one and see what happens next.
@@ -50,7 +47,7 @@ const say = text => console.log(text);
 
 (async () => {
     const env = await launch({
-        browser: EDGE,
+        browser: BROWSER,
         port: PORT,
         prefix: 'zqsocketprobe',
         args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`]

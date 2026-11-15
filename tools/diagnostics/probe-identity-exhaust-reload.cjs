@@ -11,7 +11,6 @@
 // This sets the count directly instead of spending real detections, so nothing is consumed on the
 // site's quota, and watches for a navigation for longer than several watchdog ticks.
 const path = require('node:path');
-const fs = require('node:fs');
 const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
 
 const EXT = path.resolve(__dirname, '..', '..');
@@ -22,10 +21,8 @@ const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 // Longer than the 2s watchdog interval, several times over.
 const WATCH_MS = 7000;
 
-const EDGE = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-].find(p => fs.existsSync(p));
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 
 async function findWorker() {
     for (let i = 0; i < 40; i += 1) {
@@ -39,13 +36,8 @@ async function findWorker() {
 }
 
 (async () => {
-    if (!EDGE) {
-        console.log('Edge not found.');
-        return;
-    }
-
     const session = await launch({
-        browser: EDGE,
+        browser: BROWSER,
         port: PORT,
         prefix: 'zqexhaust',
         args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`]

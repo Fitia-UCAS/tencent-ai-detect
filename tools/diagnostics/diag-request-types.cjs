@@ -16,7 +16,6 @@
 //     relative to requestWillBeSent. Requests and headers are collected separately and joined when
 //     printing, so an early or missing piece cannot lose the record.
 const path = require('node:path');
-const fs = require('node:fs');
 const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
 
 const EXT = path.resolve(__dirname, '..', '..');
@@ -25,10 +24,8 @@ const SITE = 'https://matrix.tencent.com/ai-detect/';
 const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 const OBSERVE_MS = 12000;
 
-const EDGE = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-].find(p => fs.existsSync(p));
+const { resolveBrowser } = require('../machine.cjs');
+const BROWSER = resolveBrowser();
 
 const INTERESTING = /captcha|getClassify|ai_gen_txt|gtimg/i;
 
@@ -40,7 +37,7 @@ function keyOf(sessionId, requestId) {
 
 (async () => {
     const env = await launch({
-        browser: EDGE,
+        browser: BROWSER,
         port: PORT,
         prefix: 'zqcdp',
         args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`]

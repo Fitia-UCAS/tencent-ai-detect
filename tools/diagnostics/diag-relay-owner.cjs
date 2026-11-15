@@ -31,7 +31,8 @@ function profileOf(command) {
     if (!match) return '(none)';
 
     const value = match[2] || match[3] || '';
-    const temp = process.env.TEMP || 'C:\\Users\\aFei\\AppData\\Local\\Temp';
+const { tempDir } = require('../machine.cjs');
+const temp = tempDir();
     return value.toLowerCase().startsWith(temp.toLowerCase())
         ? `${value}  ← test harness temp profile`
         : `${value}  ← default / real profile`;
