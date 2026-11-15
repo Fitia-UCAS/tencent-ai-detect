@@ -156,6 +156,46 @@ const check = async (name, fn) => {
         assert.equal(state.hostError, null, 'the live port is unaffected');
     });
 
+    // A command that cannot be delivered must not be quietly swapped for a different one.
+    await check('a command on a dead port asks for ensure instead of pretending to send', async () => {
+        const sent = [];
+        const makeRecordingChrome = () => {
+            const port = {
+                onMessage: makeEvent(),
+                onDisconnect: makeEvent(),
+                postMessage(message) { sent.push(message.type); },
+                disconnect() {}
+            };
+            return {
+                port,
+                chrome: {
+                    runtime: {
+                        lastError: undefined,
+                        connectNative() { return port; }
+                    },
+                    storage: { local: { set() {} } }
+                }
+            };
+        };
+
+        const { chrome } = makeRecordingChrome();
+        const state = { port: null, online: false, hostError: null };
+        const host = createNativeHost({ chrome, hostName: 'host', state });
+
+        // A live port carries the caller's own command.
+        host.ensure();
+        host.command('heartbeat');
+        assert.deepEqual(sent, ['ensure', 'heartbeat'], 'the live port is asked for what was sent');
+
+        // With the port gone, the heartbeat cannot be delivered: there is no host to answer it. The
+        // port is rebuilt and asked for `ensure`, which is the relay a heartbeat would have aimed at.
+        sent.length = 0;
+        state.port = null;
+        host.command('heartbeat');
+        assert.deepEqual(sent, ['ensure'],
+            'a dead port is ensured, not asked for the command that could not be delivered');
+    });
+
     const failed = checks.filter(ok => !ok).length;
     console.log('');
     if (failed) {

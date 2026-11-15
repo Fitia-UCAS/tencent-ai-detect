@@ -30,7 +30,9 @@ export function createNativeHost({ chrome, hostName, state, log = () => {} }) {
         chrome.storage.local.set({ relayOnline: online });
     }
 
-    function connect() {
+    // Opens the port and wires its listeners. Sends nothing: what a fresh port should ask for
+    // belongs to the caller, and rebuilding a port is not always an `ensure`.
+    function open() {
         if (state.port) return state.port;
 
         let port;
@@ -68,9 +70,14 @@ export function createNativeHost({ chrome, hostName, state, log = () => {} }) {
             publish(false);
         });
 
-        // Ask the host to bring the relay up as soon as the port exists.
-        post('ensure');
+        return port;
+    }
 
+    // Opens the port if needed and asks the host to bring the relay up. This is what a caller means
+    // by "make sure the relay is running", and the port being new or reused makes no difference.
+    function ensure() {
+        const port = open();
+        if (port) post('ensure');
         return port;
     }
 
@@ -98,14 +105,17 @@ export function createNativeHost({ chrome, hostName, state, log = () => {} }) {
         publish(false);
     }
 
-    // Send a command, reconnecting when the port vanished underneath us.
+    // Sends a command down the existing port. A dead port means there is no host process to answer,
+    // so the command cannot be delivered at all - the port is rebuilt and asked for `ensure`
+    // instead, which is the relay a heartbeat would have been aimed at. The substitution is named
+    // at this point rather than buried inside the port setup, because it is a different command.
     function command(type) {
         if (post(type)) return;
-        connect();
+        ensure();
     }
 
     return {
-        ensure: connect,
+        ensure,
         disconnect,
         command,
         isConnected: () => !!state.port
