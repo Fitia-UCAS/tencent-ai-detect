@@ -73,8 +73,10 @@ function addTree(dir) {
 for (const dir of RUNTIME_DIRS) addTree(dir);
 
 // Read by a person, and the licence is the reason the terms of use are not a surprise later.
-for (const extra of ['LICENSE', 'README.md']) {
-    if (fs.existsSync(path.join(ROOT, extra))) wanted.add(extra);
+// Every README is included, not just the default one: the Chinese version is the one most people
+// opening this archive will read, and leaving it out of the download is the same as not writing it.
+for (const name of fs.readdirSync(ROOT)) {
+    if (/^README(\.[\w-]+)?\.md$/.test(name) || name === 'LICENSE') wanted.add(name);
 }
 
 // --- the archive is only as good as what is in it -------------------------------------------------
