@@ -145,7 +145,7 @@
                 uses: ZQ.identityUses(),
                 spent: ZQ.identitySpent(),
                 challengeOpen: ZQ.captchaOpen(),
-                challengeSeenAt: ZQ.state.challengeSeenAt || 0,
+                challengeOpenAt: ZQ.state.challengeOpenAt || 0,
                 // How long this document had existed at the moment of the press. The one successful
                 // run on record pressed 6167ms after load; pressing earlier may spend the handshake on
                 // a page whose own client has not finished starting, which would look like a refusal.

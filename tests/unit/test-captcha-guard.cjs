@@ -160,7 +160,7 @@ check('the reload is guarded by the challenge check', () => {
     const retryEnd = engine.indexOf('ZQ.currentState', retryStart);
     const body = engine.slice(retryStart, retryEnd);
 
-    const guardAt = body.indexOf('if (ZQ.captchaOpen())');
+    const guardAt = body.indexOf('ZQ.observeChallenge()');
     const reloadAt = body.indexOf('location.reload()');
 
     assert.ok(guardAt > 0, 'scheduleRetry must check for an open challenge');
@@ -174,7 +174,7 @@ check('waiting re-schedules rather than dropping the reload', () => {
     const body = engine.slice(retryStart, retryEnd);
 
     // Returning without re-scheduling would leave the page stuck on a spent address forever.
-    const openBranch = body.match(/if \(ZQ\.captchaOpen\(\)\) \{([\s\S]*?)\n            \}/);
+    const openBranch = body.match(/if \(challenge\.open\) \{([\s\S]*?)\n            \}/);
 
     assert.ok(openBranch, 'the open-challenge branch must exist');
     assert.match(openBranch[1], /ZQ\.scheduleRetry\(ZQ\.CAPTCHA_WAIT_MS\)/,
@@ -210,13 +210,109 @@ check('rotation itself refuses to act while a challenge is open', () => {
     const rotateEnd = engine.indexOf('ZQ.handlePageState', rotateStart);
     const body = engine.slice(rotateStart, rotateEnd);
 
-    assert.match(body, /if \(ZQ\.captchaOpen\(\)\)/, 'rotate must bail out while it is up');
+    assert.match(body, /if \(ZQ\.observeChallenge\(\)\.open\)/, 'rotate must bail out while it is up');
 });
 
 check('location.reload has exactly one call site', () => {
     // A second, unguarded reload anywhere would defeat the guard silently.
     const calls = engine.match(/location\.reload\(/g) || [];
     assert.equal(calls.length, 1, 'found ' + calls.length + ' call sites');
+});
+
+// --- the challenge lifecycle is one clock ---------------------------------
+
+// Loads the layer through engine.js so observeChallenge can be driven directly.
+function bootEngine() {
+    const sandbox = {
+        window: {
+            innerWidth: 1028,
+            innerHeight: 754,
+            getComputedStyle: node => (node && node.style) || style()
+        },
+        document: {
+            body: { innerText: '' },
+            documentElement: { clientWidth: 1028, clientHeight: 754 },
+            getElementById: () => null,
+            querySelector: () => null,
+            addEventListener() {},
+            querySelectorAll() { return []; },
+            cookie: ''
+        },
+        localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+        sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+        location: { reload() {} },
+        chrome: {
+            runtime: { lastError: undefined, sendMessage() {}, onMessage: { addListener() {} } },
+            storage: { local: { get() {}, set() {} }, onChanged: { addListener() {} } }
+        },
+        MutationObserver: function () { this.observe = () => {}; },
+        setTimeout, clearTimeout, setInterval, clearInterval, console, Date, Promise
+    };
+
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    for (const source of SOURCES.slice(0, 4)) {
+        vm.runInContext(source.text, sandbox, { filename: source.name });
+    }
+    return sandbox.window.__zq;
+}
+
+check('the transition is recorded once, and the close is what starts the wait', () => {
+    const ZQ = bootEngine();
+    let open = true;
+    ZQ.captchaOpen = () => open;
+
+    const first = ZQ.observeChallenge();
+    assert.equal(first.open, true);
+    assert.equal(first.transition.type, 'challenge-open');
+    assert.equal(ZQ.observeChallenge().transition, null, 'an unchanged sample is not a transition');
+
+    open = false;
+    const closed = ZQ.observeChallenge();
+    assert.equal(closed.transition.type, 'challenge-closed');
+    assert.ok(closed.transition.openForMs >= 0, 'the trace needs how long it was up');
+    assert.equal(ZQ.awaitingAfterChallenge(), true, 'the answer is still on its way');
+
+    // Both timestamps are cleared/kept by that one call: no other module writes them.
+    assert.ok(ZQ.state.challengeClosedAt > 0, 'the close is stamped');
+    assert.equal(ZQ.state.challengeOpenAt, 0, 'and the open stamp is spent');
+});
+
+check('the wait is measured from the close, not from when the challenge was first seen', () => {
+    const ZQ = bootEngine();
+    let open = true;
+    ZQ.captchaOpen = () => open;
+
+    ZQ.observeChallenge();
+    // Seen open a long time ago: the settle window must not be computed from this.
+    ZQ.state.challengeOpenAt = Date.now() - ZQ.CHALLENGE_SETTLE_MS - 1;
+
+    open = false;
+    ZQ.observeChallenge();
+    assert.equal(ZQ.awaitingAfterChallenge(), true,
+        'a challenge that was up for a long time still owes the page its answer');
+});
+
+check('a challenge closed long ago does not hold the page', () => {
+    const ZQ = bootEngine();
+    let open = true;
+    ZQ.captchaOpen = () => open;
+    ZQ.observeChallenge();
+    open = false;
+    ZQ.observeChallenge();
+
+    ZQ.state.challengeClosedAt = Date.now() - ZQ.CHALLENGE_SETTLE_MS - 1;
+    assert.equal(ZQ.awaitingAfterChallenge(), false, 'the deadline cannot be spent by asking');
+});
+
+check('a rotation clears the cycle instead of carrying it across the reload', () => {
+    const ZQ = bootEngine();
+    ZQ.state.challengeOpenAt = Date.now();
+    ZQ.state.challengeClosedAt = Date.now();
+    ZQ.resetChallenge();
+    assert.equal(ZQ.state.challengeOpenAt, 0);
+    assert.equal(ZQ.state.challengeClosedAt, 0);
+    assert.equal(ZQ.awaitingAfterChallenge(), false);
 });
 
 check('the guard does not depend on body text', () => {

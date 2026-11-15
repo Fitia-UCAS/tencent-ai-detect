@@ -73,6 +73,24 @@ function load({ text = '', disabled = false, captcha = false, failStorageWrites 
     ZQ.canRotate = () => ZQ.canAutoAct() && !ZQ.state.rotating;
     ZQ.captchaOpen = () => captcha;
 
+    // The challenge sampler engine.js owns. Mirrored here because auto.js asks it rather than reading
+    // the container itself, which is what keeps the lifecycle to one clock.
+    ZQ.state.challengeOpenAt = 0;
+    ZQ.state.challengeClosedAt = 0;
+    ZQ.observeChallenge = function observeChallenge() {
+        if (captcha) {
+            if (ZQ.state.challengeOpenAt) return { open: true, transition: null };
+            ZQ.state.challengeOpenAt = Date.now();
+            return { open: true, transition: { type: 'challenge-open' } };
+        }
+        if (!ZQ.state.challengeOpenAt) return { open: false, transition: null };
+        const openForMs = Date.now() - ZQ.state.challengeOpenAt;
+        ZQ.state.challengeOpenAt = 0;
+        ZQ.state.challengeClosedAt = Date.now();
+        return { open: false, transition: { type: 'challenge-closed', openForMs: openForMs } };
+    };
+    ZQ.awaitingAfterChallenge = () => false;
+
     // Both live in other content scripts: identity.js owns the count, engine.js owns rotate(). This
     // module only calls them, so the sandbox records what it asked for instead of driving a reload.
     ZQ.identitySpent = () => spent;

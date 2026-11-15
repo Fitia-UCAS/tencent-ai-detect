@@ -94,8 +94,40 @@
     // cannot tell "solved, waiting for the answer" apart from "gone, nothing pending".
     ZQ.CHALLENGE_SETTLE_MS = 6000;
 
-    // When a challenge was last seen open. Zero means none has been seen this load.
-    ZQ.state.challengeSeenAt = 0;
+    // The challenge cycle: two timestamps and nothing else.
+    //
+    // A challenge is open, or it closed at some moment. `challengeOpenAt` is when the one on screen
+    // appeared (0 when none has been seen this load); `challengeClosedAt` is when the last one
+    // disappeared, which is the moment the answer starts travelling, so that is what the settle
+    // window measures from.
+    //
+    // Everything is sampled through observeChallenge() below. Sampling at only some decision points
+    // was what made this lifecycle have two clocks: three sites recorded "a challenge is open" by
+    // writing the first timestamp without recording the edge, so the settle window had nowhere to
+    // start from and a second, coarser time-based criterion had to cover for it.
+    ZQ.state.challengeOpenAt = 0;
+    ZQ.state.challengeClosedAt = 0;
+
+    // Samples the challenge and records the transition when there is one.
+    //
+    // Returns what the caller needs to decide, plus the transition to trace. Every decision that
+    // would reload the page asks this first, so "is it open" and "when did it close" cannot disagree.
+    ZQ.observeChallenge = function observeChallenge() {
+        const open = ZQ.captchaOpen();
+
+        if (open) {
+            if (ZQ.state.challengeOpenAt) return { open: true, transition: null };
+            ZQ.state.challengeOpenAt = Date.now();
+            return { open: true, transition: { type: 'challenge-open' } };
+        }
+
+        if (!ZQ.state.challengeOpenAt) return { open: false, transition: null };
+
+        const openForMs = Date.now() - ZQ.state.challengeOpenAt;
+        ZQ.state.challengeOpenAt = 0;
+        ZQ.state.challengeClosedAt = Date.now();
+        return { open: false, transition: { type: 'challenge-closed', openForMs: openForMs } };
+    };
 
     // Whether a challenge closed too recently for the page's answer to have arrived.
     //
@@ -103,28 +135,19 @@
     // for a moment after the container disappears. Everything that would reload the page asks this
     // first; without it the reload beats the answer and the result is never seen.
     //
-    // The wait is bounded by time, not by a call count. Measured: two calls 18ms apart exhausted a
+    // Bounded by a deadline rather than a call count. Measured: two calls 18ms apart exhausted a
     // count-based budget and the reload went ahead while the answer was still coming - the guard was
     // there and did nothing. A deadline cannot be spent by being asked twice.
-    ZQ.state.challengeDeferUntil = 0;
-
     ZQ.awaitingAfterChallenge = function awaitingAfterChallenge() {
-        if (!ZQ.state.challengeSeenAt) return false;
-
-        const deadline = ZQ.state.challengeDeferUntil;
-        if (deadline && Date.now() < deadline) return true;
-
-        return Date.now() - ZQ.state.challengeSeenAt < ZQ.CHALLENGE_SETTLE_MS;
+        if (!ZQ.state.challengeClosedAt) return false;
+        return Date.now() - ZQ.state.challengeClosedAt < ZQ.CHALLENGE_SETTLE_MS;
     };
 
-    // Arms the wait from now, once. Called at the moment a challenge closes - the point the answer
-    // starts travelling - so the window is not spent while the user is still solving.
-    ZQ.armChallengeDeferral = function armChallengeDeferral() {
-        if (!ZQ.state.challengeDeferUntil) {
-            ZQ.state.challengeDeferUntil = Date.now() + ZQ.CHALLENGE_SETTLE_MS;
-        }
-
-        return Math.max(0, ZQ.state.challengeDeferUntil - Date.now());
+    // Clears the cycle. A rotation replaces the document, so nothing about the old challenge carries
+    // over: a page that has just been reloaded cannot be waiting on an answer for it.
+    ZQ.resetChallenge = function resetChallenge() {
+        ZQ.state.challengeOpenAt = 0;
+        ZQ.state.challengeClosedAt = 0;
     };
 
     ZQ.scheduleRetry = function scheduleRetry(delayMs) {
@@ -136,28 +159,19 @@
         ZQ.state.retryTimer = setTimeout(() => {
             if (!ZQ.canAutoAct()) return;
 
-            if (ZQ.captchaOpen()) {
-                ZQ.state.challengeSeenAt = Date.now();
-                if (!ZQ.state.challengeWasOpen) {
-                    ZQ.state.challengeWasOpen = true;
-                    ZQ.trace('challenge-open', null, true);
-                }
+            const challenge = ZQ.observeChallenge();
+
+            if (challenge.open) {
+                if (challenge.transition) ZQ.trace('challenge-open', null, true);
                 ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
                 return;
             }
 
             // The transition matters more than the state: the challenge closing is what starts the
             // wait for the answer, and a guard that only samples "is it open now" cannot see it.
-            if (ZQ.state.challengeWasOpen) {
-                ZQ.state.challengeWasOpen = false;
-
-                // The deadline is set here, at the moment the challenge closes, because that is when
-                // the answer starts travelling. Setting it earlier - when the challenge opened - would
-                // spend the wait while the user was still solving.
-                ZQ.state.challengeDeferUntil = Date.now() + ZQ.CHALLENGE_SETTLE_MS;
-
+            if (challenge.transition) {
                 ZQ.trace('challenge-closed', {
-                    openForMs: Date.now() - (ZQ.state.challengeSeenAt || Date.now()),
+                    openForMs: challenge.transition.openForMs,
                     state: ZQ.pageState(),
                     waitMs: ZQ.CHALLENGE_SETTLE_MS
                 }, true);
@@ -235,9 +249,7 @@
 
         // A challenge on screen means the page is waiting on the user, not on a new address.
         // Rotating now would reload mid-challenge and discard their work.
-        if (ZQ.captchaOpen()) {
-            ZQ.state.challengeSeenAt = Date.now();
-            ZQ.state.challengeWasOpen = true;
+        if (ZQ.observeChallenge().open) {
             ZQ.trace('rotate-deferred', { reason: 'challenge-open' });
             ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
             return;
@@ -250,8 +262,8 @@
         if (ZQ.awaitingAfterChallenge()) {
             ZQ.trace('rotate-deferred', {
                 reason: 'awaiting-answer',
-                sinceChallengeMs: Date.now() - (ZQ.state.challengeSeenAt || 0),
-                waitLeftMs: Math.max(0, (ZQ.state.challengeDeferUntil || 0) - Date.now())
+                sinceChallengeMs: Date.now() - (ZQ.state.challengeClosedAt || 0),
+                waitLeftMs: Math.max(0, ZQ.CHALLENGE_SETTLE_MS - (Date.now() - ZQ.state.challengeClosedAt))
             });
             ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
             return;
@@ -318,11 +330,9 @@
             transport: 'relay'
         });
 
-        // A rotation is a fresh start: the challenge bookkeeping belongs to the load being replaced,
-        // and carrying it across would make the next load believe an answer is still outstanding.
-        ZQ.state.challengeSeenAt = 0;
-        ZQ.state.challengeWasOpen = false;
-        ZQ.state.challengeDeferUntil = 0;
+        // A rotation is a fresh start: the challenge cycle belongs to the load being replaced, and
+        // carrying it across would make the next load believe an answer is still outstanding.
+        ZQ.resetChallenge();
 
         ZQ.clearFp();
         ZQ.send({ action: 'logReset', ip: 'relay', reason: reason });
@@ -379,9 +389,7 @@
     ZQ.forceRotate = function forceRotate(reason) {
         if (!ZQ.isEnabled()) return;
 
-        if (ZQ.captchaOpen()) {
-            ZQ.state.challengeSeenAt = Date.now();
-            ZQ.state.challengeWasOpen = true;
+        if (ZQ.observeChallenge().open) {
             ZQ.trace('rotate-deferred', { reason: 'challenge-open', requested: true });
             ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
             return;

@@ -242,13 +242,11 @@
         if (!ZQ.canRotate()) return false;
 
         // The challenge belongs to the user. Clicking behind it would also be refused.
-        if (ZQ.captchaOpen()) {
-            // Recorded so the challenge's disappearance is not mistaken for "nothing pending": the
-            // detection it gated is still in flight, and a rotation in that window would throw its
-            // result away before it could be read.
-            ZQ.state.challengeSeenAt = Date.now();
-            return false;
-        }
+        //
+        // Sampled here rather than read, because this is one of the moments the challenge can close
+        // unnoticed: the detection it gated is still in flight, and a rotation in that window would
+        // throw its result away before it could be read.
+        if (ZQ.observeChallenge().open) return false;
 
         // Just solved, answer still on its way. Pressing again would spend a handshake on a page that
         // is about to update by itself.
