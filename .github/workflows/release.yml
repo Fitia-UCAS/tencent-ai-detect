@@ -5,9 +5,12 @@ name: release
 # they drift the download says one number and the browser shows another. Here the manifest is the
 # single source: bump it, push, and the tag follows.
 #
-# The job is idempotent on purpose. A push that changes nothing about the version finds the release
-# already there and stops, so ordinary commits to main cost nothing and cannot overwrite a published
-# archive.
+# Re-running is allowed in exactly one case, and refusing the rest is the point. If only files that
+# are not in the archive changed - a README, a test - the artifact is identical, so replacing it
+# carries no risk and saves a version number for a wording change. If anything the archive contains
+# changed, the version must be bumped: the browser compares version numbers to decide whether to
+# update, so shipping new code under an old number means the people who already installed it are
+# never offered the fix, while a fresh download quietly gets it.
 on:
   push:
     branches:
@@ -79,12 +82,44 @@ jobs:
         run: |
           set -euo pipefail
 
+          archive="dist/tencent-ai-detect-${VERSION}.zip"
+
+          # Everything the archive carries and nothing else. A path absent from this list cannot
+          # change the download, which is what makes replacing an existing asset safe for the paths
+          # that are on it. scripts/ and tests/ are deliberately out: they build and check the
+          # archive but are not part of it.
+          SHIPPED="manifest.json icon.png src host"
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "already published: $TAG"
+            echo "release $TAG already exists"
+
+            if ! git rev-parse -q --verify "refs/tags/${TAG}^{}" >/dev/null; then
+              # The checkout fetches no tags when the workflow is started by hand from a tag that is
+              # not reachable from main; asking for it is cheaper than failing.
+              git fetch --quiet --force origin "refs/tags/${TAG}:refs/tags/${TAG}" || true
+            fi
+
+            published="$(git rev-parse "refs/tags/${TAG}^{}" 2>/dev/null || true)"
+            if [ -z "$published" ]; then
+              echo "cannot resolve $TAG to a commit, so the replacement would be unverified" >&2
+              exit 1
+            fi
+
+            if ! git diff --quiet "$published" HEAD -- $SHIPPED; then
+              echo "the code shipped in $TAG has changed since it was published:" >&2
+              git diff --stat "$published" HEAD -- $SHIPPED >&2
+              echo "" >&2
+              echo "the browser compares version numbers, so new code under an old number reaches new" >&2
+              echo "downloads only - anyone who already installed it is never offered the update." >&2
+              echo "bump the version in manifest.json and package.json." >&2
+              exit 1
+            fi
+
+            echo "nothing in the archive changed since $published; replacing the asset"
+            gh release upload "$TAG" "$archive" --clobber
+            echo "replaced https://github.com/${{ github.repository }}/releases/tag/${TAG}"
             exit 0
           fi
-
-          archive="dist/tencent-ai-detect-${VERSION}.zip"
 
           # Notes are generated from the commits since the previous tag, so the release says what
           # changed without a hand-written file that falls behind.
