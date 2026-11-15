@@ -50,9 +50,11 @@ async function waitFor(predicate, attempts = 40, gap = 400) {
             const started = await waitFor(() => relayHealthy(RELAY_PORT), 40, 500);
             started ? ok('relay started on first install') : fail('relay did not start on first install');
 
+            // Must match manifest.side_panel; a path that does not resolve yields a
+            // chrome-error page with no extension privileges and no chrome.runtime.
             const panelTarget = await httpJson(
                 PORT,
-                `/json/new?chrome-extension://${EXT_ID}/sidepanel.html`,
+                `/json/new?chrome-extension://${EXT_ID}/src/sidepanel/index.html`,
                 'PUT'
             );
 

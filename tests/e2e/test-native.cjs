@@ -90,10 +90,12 @@ async function waitFor(predicate, attempts = 40, gap = 400) {
             started ? ok('relay started with the extension') : fail('relay did not start with the extension');
 
             // The side panel is a normal extension page, so it can message the worker
-            // exactly like the real UI does.
+            // exactly like the real UI does. The path must match manifest.side_panel:
+            // a URL that does not resolve lands on a chrome-error page with no extension
+            // privileges, where chrome.runtime is undefined.
             const panelTarget = await httpJson(
                 PORT,
-                `/json/new?chrome-extension://${EXT_ID}/sidepanel.html`,
+                `/json/new?chrome-extension://${EXT_ID}/src/sidepanel/index.html`,
                 'PUT'
             );
 
