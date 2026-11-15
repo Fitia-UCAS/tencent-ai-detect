@@ -7,125 +7,27 @@
 
 const DETECT_HOST = 'matrix.tencent.com';
 
-const LABELS = {
-    waiting: 'Waiting…',
-    idle: 'Ready',
-    ok: 'Ready',
-    quota: 'Quota reached',
-    'identity-spent': 'Address used up — next press rotates',
-    captcha: 'Verification needed',
-    ambiguous: 'Check the page',
-    'identity-unconfirmed': 'Address rule not installed — press retries',
-    'refusal-pending': 'Last result refused — reload the page to retry',
-    'signed-in': 'Signed in',
-    rotated: 'Rotated',
-    'relay-offline': 'Relay offline',
-    'rotation-suppressed': 'Auto refresh off',
-    away: 'Open the detection page'
-};
-
 document.addEventListener('DOMContentLoaded', () => {
-    const refreshSwitch = document.getElementById('toggle-refresh');
-    const relaySwitch = document.getElementById('toggle-relay');
-    const resetButton = document.getElementById('reset-usage');
-    const openButton = document.getElementById('open-site');
-    const stateValue = document.getElementById('page-state');
-    const notice = document.getElementById('notice');
     const hostAlert = document.getElementById('host-alert');
     const hostAlertDetail = document.getElementById('host-alert-detail');
-    let noticeTimer;
-
-    const renderSwitch = (element, enabled) => {
-        element.classList.toggle('active', enabled);
-        element.setAttribute('aria-checked', String(enabled));
-    };
-
-    // Toast helper: re-showing a notice restarts the 2.2s dismiss timer.
-    const showNotice = message => {
-        if (noticeTimer) clearTimeout(noticeTimer);
-        notice.textContent = message;
-        notice.classList.add('show');
-        noticeTimer = setTimeout(() => notice.classList.remove('show'), 2200);
-    };
 
     // --- live page state -----------------------------------------------------
 
-    const showState = (status, detail, remaining, quotaExhausted) => {
-        const key = LABELS[status] ? status : 'idle';
-        // The remaining count is the number the user actually wants; show it beside the state when
-        // the page reports one, and leave the label alone when it does not.
-        //
-        // An exhausted page reports zero rather than its last seen number, and the state word already
-        // says the allowance is gone - repeating "0 left" beside "Quota reached" adds noise without
-        // adding information.
-        const suffix = quotaExhausted
-            ? ''
-            : Number.isInteger(remaining) ? ` · ${remaining} left` : '';
-        stateValue.textContent = LABELS[key] + suffix;
-        stateValue.dataset.state = key;
-        stateValue.title = detail || '';
-    };
+    // The page state row is gone, and so is the polling that fed it.
+    //
+    // It was the one part of this panel that had to be right at the instant the panel was open, and it
+    // could not be: the value arrives when the content script reports, so a panel opened afterwards
+    // showed whatever had been written last, or nothing. A field that is usually stale is worse than
+    // no field - it invites you to trust it. The same reports still go to storage and to the trail,
+    // where each one carries its timestamp and can be read back in order.
 
-    // A report from a tab that is not the detection page says nothing about what the user is
-    // looking at now, so it is ignored rather than shown as the current state.
-    const reportForCurrentTab = report => {
-        if (!report) {
-            showState('away');
-            return;
-        }
-        showState(
-            report.status || 'idle',
-            report.signedIn ? 'Signed in' : '',
-            report.remaining,
-            report.quotaExhausted
-        );
-    };
-
-    const readActiveTab = () => {
-        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-            const current = tabs[0];
-
-            // Reading tabs requires no error handling here: an empty result is the normal answer when
-            // no window is focused, and it means "nothing to report" rather than a failure.
-            if (!current || !current.url || !current.url.includes(DETECT_HOST)) {
-                showState('away');
-                return;
-            }
-
-            chrome.tabs.sendMessage(current.id, { action: 'getStatus' }, response => {
-                // A page that has not finished loading has no content script yet; the tab listeners will
-                // ask again once it settles, so this is not surfaced as an error.
-                if (chrome.runtime.lastError || !response) {
-                    showState('waiting');
-                    return;
-                }
-                reportForCurrentTab(response);
-            });
-        });
-    };
-
-    // Push path: the background stores each report, so following that key keeps the panel current
-    // without polling.
-    chrome.storage.onChanged.addListener((changes, area) => {
-        if (area !== 'local' || !changes.lastStatus) return;
-        readActiveTab();
-    });
-
-    // Switching tabs or loading a page changes which tab the panel is describing.
-    chrome.tabs.onActivated.addListener(() => readActiveTab());
-    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-        if (changeInfo.status !== 'complete' || !tab.active) return;
-        readActiveTab();
-    });
-
-    // Also follow the relay's own liveness: a relay that dropped out is a distinct state from a
-    // page that is merely idle.
-    chrome.storage.onChanged.addListener((changes, area) => {
-        if (area !== 'local' || !changes.relayOnline) return;
-        if (changes.relayOnline.newValue === false) showState('relay-offline');
-    });
-
-    readActiveTab();
+    // There is no toast, no notice line and no floating anything. The panel used to raise a box over
+    // the content to say what had just been chosen - a box that covered what you were looking at, to
+    // describe what you had just pressed. A second attempt put the same sentence in a line along the
+    // bottom, which was the same mistake in a quieter shape: a strip that exists only to narrate the
+    // click you just made. Both are gone. What the panel needs to say, it says in place - the chosen
+    // card marks itself, the wait card carries its own seconds, and a relay that is down shows the
+    // host alert. Nothing else needs narrating.
 
     // --- native host health --------------------------------------------------
 
@@ -158,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+
     // --- controls ------------------------------------------------------------
 
     if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
@@ -166,152 +69,114 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(() => {});
     }
 
-    const spentSelect = document.getElementById('spent-mode');
-    const spentDelay = document.getElementById('spent-delay');
-    const spentDelayRow = document.getElementById('spent-delay-row');
-    const rotateButton = document.getElementById('rotate-now');
+    // A missing element here would throw on addEventListener and take the whole panel down with it,
+    // leaving a blank window and no clue why. Each control is bound only if it is in the document.
+    const bind = (element, event, handler) => {
+        if (!element) return;
+        element.addEventListener(event, handler);
+    };
 
-    // The seconds field only applies to one of the four answers, so it is shown only for that one.
-    const renderSpentDelayRow = mode => {
-        spentDelayRow.hidden = mode !== 'delay';
+    const spentDelay = document.getElementById('spent-delay');
+    const spentDelayHint = document.getElementById('spent-delay-hint');
+    const rotateButton = document.getElementById('rotate-now');
+    const spentCards = Array.from(document.querySelectorAll('.spent-card'));
+
+    // Swapping an address is only possible on a page that has one. The button used to carry a
+    // `disabled` attribute in the markup with nothing that ever removed it, so it could never be
+    // pressed; now it is enabled exactly when the current tab is the detection page.
+    const syncRotateButton = () => {
+        if (!rotateButton) return;
+        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+            const current = tabs[0];
+            const onPage = Boolean(current && current.url && current.url.includes(DETECT_HOST));
+            rotateButton.disabled = !onPage;
+        });
+    };
+
+    syncRotateButton();
+
+    // The panel stays open while tabs change, so the button has to follow: leaving it enabled on a
+    // page with no address would send a request nothing answers.
+    chrome.tabs.onActivated.addListener(syncRotateButton);
+    chrome.tabs.onUpdated.addListener((tabId, info) => {
+        if (info.url || info.status === 'complete') syncRotateButton();
+    });
+
+    // Exactly one card is chosen. The mark goes on the card, because the left edge is drawn there;
+    // rendering the whole group from the stored value means the panel cannot drift into a state where
+    // two cards look selected or none does.
+    const renderSpentMode = mode => {
+        for (const card of spentCards) {
+            card.dataset.selected = String(card.dataset.mode === mode);
+        }
     };
 
     chrome.storage.local.get(
-        ['autoRefresh', 'relayEnabled', 'relayOnline', 'spentMode', 'spentDelaySeconds'],
+        ['autoRefresh', 'relayOnline', 'spentMode', 'spentDelaySeconds'],
         state => {
-            renderSwitch(refreshSwitch, state.autoRefresh !== false);
-            renderSwitch(relaySwitch, state.relayEnabled !== false);
-            spentSelect.value = state.spentMode || 'manual';
-            if (Number.isFinite(state.spentDelaySeconds)) {
-                spentDelay.value = String(state.spentDelaySeconds);
-            }
-            renderSpentDelayRow(spentSelect.value);
-            if (state.relayOnline === false) showState('relay-offline');
+            const seconds = Number.isFinite(state.spentDelaySeconds) ? state.spentDelaySeconds : 30;
+            const mode = state.spentMode || 'manual';
+
+            renderSpentMode(mode);
+            if (spentDelay) spentDelay.value = String(seconds);
+            if (spentDelayHint) spentDelayHint.textContent = 'Swaps after ' + seconds + 's';
         });
 
     // The panel owns the preference; the content script reads it when the address runs out, so the
     // decision lives in one place instead of being duplicated into each trigger.
-    spentSelect.addEventListener('change', () => {
-        const spentMode = spentSelect.value;
-        renderSpentDelayRow(spentMode);
-        chrome.storage.local.set({ spentMode }, () => {
-            showNotice(spentMode === 'manual'
-                ? 'The page will wait for you when used up'
-                : spentMode === 'press'
-                    ? 'Pressing detect on a used-up address swaps it'
-                    : spentMode === 'delay'
-                        ? 'Address swaps after the wait below'
-                        : 'Address swaps as soon as it is used up');
-        });
-    });
+    //
+    // Clicking the header chooses the card. On the one card that opens, the same click also toggles
+    // it, because <details> does that itself: choosing it and seeing its setting are one gesture.
+    for (const card of spentCards) {
+        const head = card.querySelector('.spent-head');
+        if (!head) continue;
 
-    // Changed rather than typed: committing on every keystroke would store 1, 12, 123 from someone
-    // entering 120 and act on each. The bound keeps an empty or absurd entry from being saved.
-    spentDelay.addEventListener('change', () => {
-        const seconds = Math.min(3600, Math.max(1, Math.round(Number(spentDelay.value) || 30)));
-        spentDelay.value = String(seconds);
-        chrome.storage.local.set({ spentDelaySeconds: seconds }, () => {
-            showNotice('Address will swap after ' + seconds + 's');
+        head.addEventListener('click', () => {
+            const spentMode = card.dataset.mode;
+            renderSpentMode(spentMode);
+
+            chrome.storage.local.set({ spentMode });
         });
+    }
+
+    // Changed rather than typed: committing on every keystroke would store 3, 30, 300 while someone
+    // types 300 and act on each. A wait can be a fraction - half a second is a real answer for a page
+    // that finishes fast - so the value is kept as typed rather than rounded to whole seconds.
+    bind(spentDelay, 'change', () => {
+        const seconds = Math.min(3600, Math.max(0.5, Number(spentDelay.value) || 30));
+        // Two decimals is enough to express any useful wait and keeps the field readable.
+        const rounded = Math.round(seconds * 100) / 100;
+        spentDelay.value = String(rounded);
+        // The card's own subtitle carries the number, so leaving it stale would have the list describe
+        // a wait that is no longer the one stored.
+        if (spentDelayHint) spentDelayHint.textContent = 'Swaps after ' + rounded + 's';
+        chrome.storage.local.set({ spentDelaySeconds: rounded });
     });
 
     // Asking for another detection is the moment the address should change: the press could not be
     // served otherwise, and waiting longer only leaves the page unusable.
-    rotateButton.addEventListener('click', () => {
+    bind(rotateButton, 'click', () => {
         chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
             const current = tabs[0];
             if (!current || !current.url || !current.url.includes(DETECT_HOST)) return;
 
             rotateButton.disabled = true;
             chrome.tabs.sendMessage(current.id, { action: 'rotateNow' }, response => {
-                // Consume lastError so a page without a content script does not leave the control
-                // looking busy forever.
-                const error = chrome.runtime.lastError;
-                rotateButton.disabled = false;
-                if (error || !response || response.status !== 'success') {
-                    showNotice('Could not swap the address');
-                }
+                // Read lastError so a page without a content script does not leave the control looking
+                // busy forever. There is nothing else to do about it: a failure here means the page is
+                // not open or has no content script, both of which the user can see for themselves.
+                void chrome.runtime.lastError;
+                syncRotateButton();
             });
         });
     });
 
+    // The auto refresh switch is gone. What it controlled is now decided by the four rows above:
+    // "Wait for me" holds the page, the other three swap on their own schedule, and "Swap now" is the
+    // eager end that the switch used to be. Two controls for one decision meant the switch could
+    // silently contradict the row that was selected.
 
-    // The relay switch controls whether the local relay runs at all. Turning it
-    // off stops the process; the page falls back to its own socket.
-    relaySwitch.addEventListener('click', () => {
-        if (relaySwitch.disabled) return;
+    // The way into the detection page is a link in the corner now, so the browser opens it and the
+    // script does not have to. `target="_blank"` in the markup keeps the panel itself in place.
 
-        const previous = relaySwitch.getAttribute('aria-checked') === 'true';
-        const enabled = !previous;
-        relaySwitch.disabled = true;
-        renderSwitch(relaySwitch, enabled);
-
-        chrome.runtime.sendMessage({ action: 'setRelay', enabled }, response => {
-            // Consume lastError in the callback; otherwise a missing worker leaves
-            // the control looking enabled despite no preference having been saved.
-            const error = chrome.runtime.lastError;
-            relaySwitch.disabled = false;
-            if (error || !response || response.status !== 'success') {
-                renderSwitch(relaySwitch, previous);
-                showNotice('Could not change Relay setting');
-                return;
-            }
-
-            renderSwitch(relaySwitch, enabled);
-            showNotice(enabled
-                ? (response.online ? 'Relay started' : 'Relay is starting…')
-                : 'Relay stop requested');
-        });
-    });
-
-    refreshSwitch.addEventListener('click', () => {
-        if (refreshSwitch.disabled) return;
-
-        const previous = refreshSwitch.getAttribute('aria-checked') === 'true';
-        const autoRefresh = !previous;
-        refreshSwitch.disabled = true;
-        renderSwitch(refreshSwitch, autoRefresh);
-
-        chrome.storage.local.set({ autoRefresh }, () => {
-            const error = chrome.runtime.lastError;
-            refreshSwitch.disabled = false;
-            if (error) {
-                renderSwitch(refreshSwitch, previous);
-                showNotice('Could not save Auto refresh setting');
-            }
-        });
-    });
-
-    openButton.addEventListener('click', () => {
-        chrome.tabs.create({
-            url: 'https://matrix.tencent.com/ai-detect/',
-            active: true
-        });
-    });
-
-    resetButton.addEventListener('click', () => {
-        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-            const current = tabs[0];
-            if (!current || !current.id) {
-                showNotice('Open the AI detection page first');
-                return;
-            }
-
-            // Guard against double clicks while the message round-trip is in flight.
-            resetButton.disabled = true;
-            chrome.tabs.sendMessage(current.id, { action: 'manualReset' }, () => {
-                resetButton.disabled = false;
-                if (chrome.runtime.lastError) {
-                    showNotice('Open the AI detection page first');
-                    return;
-                }
-                showNotice('Sent to the current page');
-            });
-
-            // resetCount and resetHistory are owned by the background process.
-            // The content script reports logReset only after the reset operation
-            // actually proceeds. Incrementing here as well double-counted manual
-            // resets (and counted attempts that never reached the reset path).
-        });
-    });
 });

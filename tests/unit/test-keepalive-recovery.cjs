@@ -33,7 +33,7 @@ function makeHost({ connected = true } = {}) {
 
 function makeChrome() {
     return {
-        storage: { local: { get: async () => ({ relayEnabled: true }) } },
+        storage: { local: { get: async () => ({}) } },
         alarms: { get() {}, create() {}, clear() {} }
     };
 }
@@ -56,8 +56,7 @@ function makeChrome() {
         chrome: makeChrome(),
         health: { ping: async () => (healthy ? { ok: true } : { ok: false }) },
         host,
-        alarmName: 'relay-keepalive',
-        keys: { relayEnabled: 'relayEnabled' }
+        alarmName: 'relay-keepalive'
     });
 
     // --- a healthy relay is only told to renew its lease -------------------
@@ -100,8 +99,7 @@ function makeChrome() {
             chrome: makeChrome(),
             health: { ping: async () => ({ ok: healthy }) },
             host,
-            alarmName: 'relay-keepalive',
-            keys: { relayEnabled: 'relayEnabled' }
+            alarmName: 'relay-keepalive'
         });
 
         await keepAlive.keepAlive();   // failure 1

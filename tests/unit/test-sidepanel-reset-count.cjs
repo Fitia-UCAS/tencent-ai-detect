@@ -1,120 +1,172 @@
-// Verifies that the side panel does not increment resetCount itself.
-// The background process is the single source of truth because it records
-// logReset only after the content script has entered the reset path.
-const assert = require('node:assert/strict');
+// The panel's one way to ask for another address.
+//
+// It used to have two: `rotate-now` and `reset-usage`. They were not two abilities. `rotateNow` calls
+// forceRotate, `manualReset` cleared the failure counters and then called rotate - so the second
+// button did the first one's job after some bookkeeping, and pressing it on a healthy page did
+// nothing the first button would not have done. Two buttons that do one thing invite a wrong choice.
+//
+// This file pins the single remaining control: it asks the page to rotate, it guards against a
+// second press while the round trip is in flight, and it cannot stay stuck.
+const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function makeElement() {
-    const listeners = new Map();
-    const attributes = new Map();
-    const classes = new Set();
+const SOURCE = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'sidepanel', 'index.js'), 'utf8');
+
+function makeEvent() {
+    const listeners = [];
     return {
-        disabled: false,
-        textContent: '',
-        title: '',
-        dataset: {},
-        classList: {
-            add(name) { classes.add(name); },
-            remove(name) { classes.delete(name); },
-            toggle(name, force) {
-                if (force) classes.add(name);
-                else classes.delete(name);
-            }
-        },
-        addEventListener(type, listener) { listeners.set(type, listener); },
-        setAttribute(name, value) { attributes.set(name, String(value)); },
-        getAttribute(name) { return attributes.get(name) ?? null; },
-        // The panel reads a select's value when it renders the stored preference.
-        value: '',
-        click() {
-            const listener = listeners.get('click');
-            if (listener) listener({ target: this });
-        }
+        addListener(fn) { listeners.push(fn); },
+        dispatch(...args) { for (const fn of listeners) fn(...args); }
     };
 }
 
-const elements = new Map([
-    ['toggle-refresh', makeElement()],
-    ['toggle-relay', makeElement()],
-    ['reset-usage', makeElement()],
-    ['spent-mode', makeElement()],
-    ['spent-delay', makeElement()],
-    ['spent-delay-row', makeElement()],
-    ['rotate-now', makeElement()],
-    ['open-site', makeElement()],
-    ['page-state', makeElement()],
-    ['notice', makeElement()]
-]);
-const writes = [];
-const messages = [];
-let domReady = null;
+function makeElement() {
+    return {
+        textContent: '',
+        hidden: false,
+        disabled: false,
+        value: '',
+        dataset: {},
+        attributes: {},
+        classList: { add() {}, remove() {}, toggle() {} },
+        setAttribute(name, value) { this.attributes[name] = value; },
+        getAttribute(name) { return this.attributes[name] ?? null; },
+        addEventListener(type, fn) { (this._handlers ||= {}); (this._handlers[type] ||= []).push(fn); },
+        click() { for (const fn of (this._handlers?.click || [])) fn(); }
+    };
+}
 
-// The panel follows live page state through these events; the assertions below are about the
-// reset path, so the events are inert here but must exist or the script throws on load.
-const makeEvent = () => ({ addListener() {} });
+function build({ tabUrl = 'https://matrix.tencent.com/ai-detect/', sendFails = false } = {}) {
+    const domReady = makeEvent();
+    const elements = new Map([
+        ['notice', makeElement()],
+        ['host-alert', makeElement()],
+        ['host-alert-detail', makeElement()],
+        ['spent-delay', makeElement()],
+        ['spent-delay-hint', makeElement()],
+        ['rotate-now', makeElement()]
+    ]);
 
-const chrome = {
-    sidePanel: { setPanelBehavior: () => Promise.resolve() },
-    storage: {
-        local: {
-            get(_keys, callback) { callback({ autoRefresh: true, relayEnabled: true, resetCount: 4 }); },
-            set(values, callback) {
-                writes.push({ ...values });
-                if (callback) callback();
-            }
+    const sent = [];
+    const tab = { id: 42, url: tabUrl };
+
+    const card = makeElement();
+    card.dataset.mode = 'manual';
+    card.querySelector = () => makeElement();
+
+    const chrome = {
+        sidePanel: { setPanelBehavior: () => Promise.resolve() },
+        runtime: { lastError: sendFails ? { message: 'no receiver' } : undefined },
+        storage: {
+            local: {
+                get: (keys, cb) => cb({}),
+                set: (values, cb) => { if (cb) cb(); }
+            },
+            onChanged: makeEvent()
         },
-        onChanged: makeEvent()
-    },
-    runtime: { lastError: undefined, sendMessage() {} },
-    tabs: {
-        query(_query, callback) { callback([{ id: 42 }]); },
-        sendMessage(tabId, message, callback) {
-            // The panel polls the active tab for its state on open; only the reset message matters here.
-            if (message.action === 'getStatus') { callback({ status: 'ok' }); return; }
-            messages.push({ tabId, ...message });
-            callback({ status: 'success' });
+        tabs: {
+            query: (info, cb) => cb([tab]),
+            sendMessage: (tabId, message, cb) => {
+                sent.push({ tabId, action: message.action });
+                if (cb) cb(sendFails ? undefined : { status: 'success' });
+            },
+            onActivated: makeEvent(),
+            onUpdated: makeEvent()
+        }
+    };
+
+    const context = vm.createContext({
+        chrome,
+        document: {
+            addEventListener: (type, fn) => { if (type === 'DOMContentLoaded') domReady.addListener(fn); },
+            getElementById: id => elements.get(id) || null,
+            querySelectorAll: selector => selector === '.spent-card' ? [card] : []
         },
-        create() {},
-        onActivated: makeEvent(),
-        onUpdated: makeEvent()
-    }
-};
+        setTimeout,
+        clearTimeout,
+        console
+    });
 
-const document = {
-    addEventListener(type, listener) {
-        if (type === 'DOMContentLoaded') domReady = listener;
-    },
-    getElementById(id) { return elements.get(id); }
-};
+    vm.runInContext(SOURCE, context, { filename: 'src/sidepanel/index.js' });
+    domReady.dispatch();
 
-const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'sidepanel', 'index.js'), 'utf8');
-vm.runInNewContext(source, {
-    chrome,
-    document,
-    Date,
-    Promise,
-    setTimeout,
-    clearTimeout,
-    console
-}, { filename: 'src/sidepanel/index.js' });
+    return { elements, sent, tab };
+}
 
-assert.equal(typeof domReady, 'function', 'side panel registers DOMContentLoaded');
-domReady();
-elements.get('reset-usage').click();
+// 1. The control is never left permanently disabled by the markup.
+{
+    const html = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'sidepanel', 'index.html'), 'utf8');
+    const tag = html.slice(html.indexOf('id="rotate-now"') - 120, html.indexOf('id="rotate-now"') + 120);
 
-assert.deepEqual(messages, [{ tabId: 42, action: 'manualReset' }]);
-assert.equal(elements.get('reset-usage').disabled, false);
-assert.equal(
-    writes.some(write => Object.hasOwn(write, 'resetCount')),
-    false,
-    'side panel must not increment resetCount in parallel with background logReset'
-);
-assert.equal(
-    writes.some(write => Object.hasOwn(write, 'lastResetTime')),
-    false,
-    'side panel must not update reset timestamps independently'
-);
+    assert.ok(!/\sdisabled[\s>]/.test(tag),
+        'a `disabled` attribute with nothing to remove it makes the control unusable');
+    console.log('  ok    the control is not born disabled');
+}
 
-process.stdout.write('PASS: side panel delegates reset accounting to background (4 assertions)\n');
+// 2. Pressing it asks the current page to swap, when that page is the detection page.
+{
+    const app = build();
+    app.elements.get('rotate-now').disabled = false;
+    app.elements.get('rotate-now').click();
+
+    assert.deepEqual(app.sent, [{ tabId: 42, action: 'rotateNow' }],
+        'the swap control must ask the page to rotate');
+    console.log('  ok    pressing swap asks the page to rotate');
+}
+
+// 3. It is enabled on the detection page and disabled everywhere else.
+{
+    const onPage = build({ tabUrl: 'https://matrix.tencent.com/ai-detect/' });
+    assert.equal(onPage.elements.get('rotate-now').disabled, false,
+        'the control must be usable on the page that owns the address');
+
+    const offPage = build({ tabUrl: 'https://example.com/' });
+    assert.equal(offPage.elements.get('rotate-now').disabled, true,
+        'the control must be unusable where there is no address to swap');
+    console.log('  ok    the control follows the current tab');
+}
+
+// 4. A page with no content script answers nothing; the control must not stay busy.
+{
+    const app = build({ sendFails: true });
+    app.elements.get('rotate-now').disabled = false;
+    app.elements.get('rotate-now').click();
+
+    assert.equal(app.elements.get('rotate-now').disabled, false,
+        'a failed round trip must leave the control usable');
+    console.log('  ok    a failed round trip leaves the control usable');
+}
+
+// 5. Off the detection page there is nothing to rotate, so no message is sent.
+{
+    const app = build({ tabUrl: 'https://example.com/' });
+    app.elements.get('rotate-now').click();
+
+    assert.deepEqual(app.sent, [], 'a page that cannot rotate must not receive the request');
+    console.log('  ok    off the detection page nothing is sent');
+}
+
+// 6. The removed second control is gone from both the markup and the script.
+{
+    const html = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'sidepanel', 'index.html'), 'utf8');
+
+    assert.ok(!/reset-usage/.test(html), 'the markup must not carry the duplicate control');
+    assert.ok(!/resetButton/.test(SOURCE), 'the script must not look up the duplicate control');
+    console.log('  ok    the duplicate control is gone from markup and script');
+}
+
+// 7. No control is bound without a guard, and no listener is attached to a missing node.
+{
+    assert.match(SOURCE, /if \(!head\) continue;/, 'each card header must be checked before use');
+    assert.match(SOURCE, /const bind = \(element, event, handler\) => \{\s*if \(!element\) return;/,
+        'the shared guard must exist');
+    console.log('  ok    every control is guarded before binding');
+}
+
+console.log('');
+console.log('PASS: 7/7 swap control checks');

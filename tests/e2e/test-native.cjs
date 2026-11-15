@@ -122,77 +122,23 @@ async function waitFor(predicate, attempts = 40, gap = 400) {
                 const switchState = async () => {
                     const value = await evaluate(`(async () => {
             const button = document.getElementById('toggle-relay');
-            const settings = await chrome.storage.local.get(['relayEnabled']);
-            return JSON.stringify({
-              found: !!button,
-              checked: button?.getAttribute('aria-checked'),
-              disabled: !!button?.disabled,
-              saved: settings.relayEnabled !== false
-            });
+            return JSON.stringify({ found: !!button });
           })()`);
                     return JSON.parse(value || '{}');
                 };
 
-                // Dispatch browser input to the actual switch instead of calling
-                // chrome.runtime.sendMessage directly. This exercises sidepanel.js.
-                const clickSwitch = async () => {
-                    const center = await evaluate(`(() => {
-            const button = document.getElementById('toggle-relay');
-            if (!button) return null;
-            const rect = button.getBoundingClientRect();
-            return JSON.stringify({ x: rect.left + rect.width / 2,
-                                    y: rect.top + rect.height / 2 });
-          })()`);
-                    if (!center) throw new Error('Relay switch element not found');
-                    const { x, y } = JSON.parse(center);
-                    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-                        throw new Error('invalid Relay switch coordinates');
-                    }
-                    await panel.send('Input.dispatchMouseEvent', {
-                        type: 'mousePressed', x, y, button: 'left', clickCount: 1
-                    });
-                    await panel.send('Input.dispatchMouseEvent', {
-                        type: 'mouseReleased', x, y, button: 'left', clickCount: 1
-                    });
-                };
+                // The relay switch is gone: with it off the detection socket failed closed, so
+                // "off" was never a usable state. What has to hold instead is that the panel offers
+                // no such control and the relay runs without anyone turning it on.
+                const removed = await waitFor(async () => !(await switchState()).found, 30, 200);
+                removed
+                    ? ok('Side panel offers no relay switch')
+                    : fail('the relay switch is still in the side panel');
 
-                const ready = await waitFor(async () => {
-                    const state = await switchState();
-                    return state.found && !state.disabled && state.checked === String(state.saved);
-                }, 30, 200);
-                if (!ready) throw new Error('side panel switch did not initialize');
-
-                // 2. Click the actual UI control, then check both the persisted value
-                // and the visual state. Port disappearance alone is insufficient.
-                await clickSwitch();
-                const offUi = await waitFor(async () => {
-                    const state = await switchState();
-                    return state.checked === 'false' && state.saved === false && !state.disabled;
-                }, 40, 200);
-                const offProcess = await waitFor(async () => !(await relayUp()), 30, 400);
-                // When another browser owns the port, "still up" says nothing about this switch.
-                const offOwner = offProcess ? { other: false } : relayOwnedElsewhere(testProfile);
-                if (offUi && offProcess) {
-                    ok('Relay switch click disabled setting and stopped the process');
-                } else if (offUi && offOwner.other) {
-                    note(
-                        `switch turned off and persisted, but the relay on ${RELAY_PORT} belongs to another browser ` +
-                        `(pid ${offOwner.owner.pid}, profile ${offOwner.owner.profile}); stop assertion not evaluable`
-                    );
-                } else {
-                    fail(`Relay OFF failed: ui=${offUi} process=${offProcess}`);
-                }
-
-                // 3. Re-enable using the same on-screen switch and assert persistence.
-                await clickSwitch();
-                const onUi = await waitFor(async () => {
-                    const state = await switchState();
-                    return state.checked === 'true' && state.saved === true && !state.disabled;
-                }, 40, 200);
-                const onProcess = await waitFor(relayUp, 40, 500);
-                onUi && onProcess
-                    ? ok('Relay switch click enabled setting and started the process')
-                    : fail(`Relay ON failed: ui=${onUi} process=${onProcess}`);
+                const running = await waitFor(relayUp, 40, 500);
+                running
+                    ? ok('The relay is running with nothing to turn on')
+                    : fail('the relay did not start on its own');
 
                 panel.close();
                 panel = null;

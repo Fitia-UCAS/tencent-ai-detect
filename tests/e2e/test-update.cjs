@@ -71,23 +71,24 @@ async function waitFor(predicate, attempts = 40, gap = 400) {
                     returnByValue: true
                 });
 
-                // User switches the relay off.
-                await send(`new Promise(r => chrome.runtime.sendMessage({ action: 'setRelay', enabled: false }, r))`);
-
-                const offOk = await waitFor(async () => !(await relayHealthy(RELAY_PORT)), 30, 400);
-                offOk ? ok('relay stopped after switching off') : fail('relay kept running after switching off');
+                // The relay switch is gone, so there is no "off" to persist across an update. What
+                // still has to hold is the opposite: after the extension reloads, the relay comes
+                // back on its own. Nothing turns it on, so if it does not, the page is dead and the
+                // user has no control that would fix it.
+                const before = await waitFor(() => relayHealthy(RELAY_PORT), 30, 400);
+                before ? ok('relay is running before the reload') : fail('relay was not running to begin with');
 
                 // Exercise an extension reload only. This does not simulate an
                 // onInstalled(reason='update') event from a real version upgrade.
                 await send(`chrome.runtime.reload(); 'reloading'`).catch(() => {});
 
-                // Give the reload time to settle, then confirm nothing came back.
+                // Give the reload time to settle, then confirm it came back by itself.
                 await sleep(6000);
 
                 if (await relayHealthy(RELAY_PORT)) {
-                    fail('relay came back after the extension reloaded, ignoring relayEnabled=false');
+                    ok('relay came back after the extension reloaded without being switched on');
                 } else {
-                    ok('relay stayed off across the reload');
+                    fail('relay did not come back after the extension reloaded, and there is no control to start it');
                 }
 
                 panel.close();

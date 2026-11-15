@@ -11,7 +11,7 @@
 // reports as connected. Asking once a minute then changes nothing for as long as the browser stays
 // open. The counter below notices that silence and replaces the host process instead.
 
-export function createKeepAlive({ chrome, health, host, alarmName, keys }) {
+export function createKeepAlive({ chrome, health, host, alarmName }) {
     // Two ticks is about two minutes, long enough for a slow respawn to finish on its own.
     const MAX_ENSURE_FAILURES = 2;
 
@@ -30,13 +30,6 @@ export function createKeepAlive({ chrome, health, host, alarmName, keys }) {
     }
 
     async function keepAlive() {
-        const state = await chrome.storage.local.get([keys.relayEnabled]);
-
-        if (state[keys.relayEnabled] === false) {
-            chrome.alarms.clear(alarmName);
-            return;
-        }
-
         const body = await health.ping();
 
         if (body && body.ok === true) {

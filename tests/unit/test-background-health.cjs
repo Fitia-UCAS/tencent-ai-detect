@@ -156,48 +156,26 @@ async function tick() {
         'all other synchronous background actions close their message channels'
     );
 
-    // The side-panel switch must actually stop the relay's owner, not just persist a flag.
-    // Turning it off has to drop the native port (the host exits on stdin EOF and takes the relay
-    // with it) and clear the keepalive alarm, otherwise the next tick restarts what was just stopped.
+    // The relay always runs now. The switch is gone because turning it off never produced a working
+    // alternative: the detection socket is rerouted to the relay by URL alone, so with no process
+    // listening the socket fails closed and the page stops detecting. What this pins is that the
+    // worker still does not gate the start on a stored flag - a leftover false from an older build
+    // must not stop the relay.
     {
         const worker = createWorker({ ok: true });
+        worker.storage.relayEnabled = false;
         build(worker).start();
         worker.startupEvent.dispatch();
         await tick();
 
-        const listener = worker.messageEvent.listeners[0];
-        const before = worker.portDisconnects.length;
-
-        let response;
-        const channel = listener({ action: 'setRelay', enabled: false }, {}, value => { response = value; });
-        await tick();
-
-        check(worker.storage.relayEnabled === false, 'switching the relay off persists the disabled state');
         check(
-            worker.portDisconnects.length === before + 1,
-            'switching the relay off drops the native port so the host tears the relay down'
+            worker.postedMessages.some(message => message.type === 'ensure'),
+            'the worker starts the relay even when an older build left relayEnabled=false behind'
         );
         check(
-            worker.clearedAlarms.includes('relay-keepalive'),
-            'switching the relay off clears the keepalive alarm so it cannot restart the relay'
+            worker.clearedAlarms.length === 0,
+            'and does not clear the keepalive alarm that would restart it'
         );
-        check(
-            channel === true && response?.status === 'success',
-            'the async stop path keeps its channel open and then answers'
-        );
-
-        const postedBefore = worker.postedMessages.length;
-        worker.storage.relayEnabled = true;
-        let onResponse;
-        listener({ action: 'setRelay', enabled: true }, {}, value => { onResponse = value; });
-        await tick();
-
-        check(
-            worker.postedMessages.length > postedBefore &&
-            worker.postedMessages[worker.postedMessages.length - 1].type === 'ensure',
-            'switching the relay on asks the host to ensure the relay is running'
-        );
-        check(onResponse?.status === 'success', 'the enable path answers after the health probe');
     }
 
     if (failures.length) {

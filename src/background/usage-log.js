@@ -75,10 +75,9 @@ export function createUsageLog({ chrome, keys, defaults, historyLimit, usageWind
 
     function readStatus(callback) {
         chrome.storage.local.get(
-            [keys.relayEnabled, keys.relayOnline, keys.autoRefresh,
+            [keys.relayOnline, keys.autoRefresh,
                 keys.ipUsageCount, keys.resetCount, keys.lastStatus, keys.hostError],
             result => callback({
-                relayEnabled: result[keys.relayEnabled] !== false,
                 relayOnline: result[keys.relayOnline] === true,
                 autoRefresh: result[keys.autoRefresh] !== undefined ? result[keys.autoRefresh] : true,
                 ipUsageCount: result[keys.ipUsageCount] || 0,

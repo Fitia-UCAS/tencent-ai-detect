@@ -1,13 +1,17 @@
 :root {
       color-scheme: light;
+      /* The layout is borrowed from prompt-queue, the colour is not: these rows are actions, and an
+         action reads as blue. The teal there is a quiet accent for a list of records; a button that
+         changes what the extension does has to look like a button. */
       --brand: #0868f2;
-      --brand-hover: #005bdc;
-      --brand-soft: #eef5ff;
+      --brand-hover: #0059d6;
+      --brand-soft: #eaf2ff;
       --ink: #14213a;
       --muted: #697386;
-      --line: #e7ecf3;
-      --surface-soft: #f6f8fb;
+      --line: #e2e8f2;
+      --surface-soft: #f5f8fd;
       --white: #ffffff;
+      --shell: #ffffff;
     }
 
     * {
@@ -49,7 +53,7 @@
       width: 430px;
       height: 430px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(8, 104, 242, 0.12), rgba(8, 104, 242, 0) 67%);
+      background: radial-gradient(circle, rgba(8, 104, 242, 0.10), rgba(8, 104, 242, 0) 67%);
       content: "";
       transform: translateX(-50%);
       pointer-events: none;
@@ -63,6 +67,39 @@
       border-bottom: 1px solid rgba(231, 236, 243, 0.92);
       background: rgba(255, 255, 255, 0.78);
       backdrop-filter: blur(14px);
+    }
+
+    /* The corner link out to the detection page. Kept as an anchor: it is navigation, not an action
+       this panel performs, and a link can be opened in a new tab by the browser itself. */
+    .brand-link {
+      display: inline-grid;
+      width: 30px;
+      height: 30px;
+      margin-left: auto;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--muted);
+      background: var(--white);
+      text-decoration: none;
+      transition: border-color .14s ease, color .14s ease, background .14s ease;
+    }
+
+    .brand-link svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .brand-link:hover {
+      border-color: var(--brand);
+      color: var(--brand-hover);
+      background: var(--brand-soft);
+    }
+
+    .brand-link:focus-visible {
+      outline: 2px solid var(--brand);
+      outline-offset: 1px;
     }
 
     .brandbar img {
@@ -94,7 +131,7 @@
       width: 118px;
       height: 118px;
       place-items: center;
-      border: 1px solid rgba(8, 104, 242, 0.1);
+      border: 1px solid rgba(8, 104, 242, 0.12);
       border-radius: 34px;
       background: rgba(255, 255, 255, 0.84);
       box-shadow:
@@ -113,7 +150,7 @@
     .emblem::before {
       inset: -10px;
       z-index: -1;
-      background: rgba(8, 104, 242, 0.055);
+      background: rgba(8, 104, 242, 0.05);
     }
 
     .emblem::after {
@@ -127,19 +164,18 @@
       object-fit: contain;
     }
 
+    /* No frame around the answers. The dock used to be a bordered, shadowed, blurred card that held
+       everything, which put a box inside a box once the answers became cards of their own. It is now
+       just the region that sits at the bottom of the panel - the cards are the only boxes on screen. */
     .dock-wrap {
       position: sticky;
       bottom: 0;
       padding: 0 14px 14px;
+      background: var(--white);
     }
 
     .dock {
-      padding: 12px;
-      border: 1px solid rgba(219, 226, 236, 0.94);
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.94);
-      box-shadow: 0 16px 44px rgba(22, 43, 78, 0.13);
-      backdrop-filter: blur(18px);
+      padding: 0;
     }
 
     .primary {
@@ -151,7 +187,7 @@
       padding: 0 16px 0 18px;
       border: 0;
       border-radius: 12px;
-      background: linear-gradient(135deg, #0878ff 0%, var(--brand) 72%);
+      background: linear-gradient(135deg, #0a78ff 0%, var(--brand) 72%);
       box-shadow: 0 9px 22px rgba(8, 104, 242, 0.22);
       color: var(--white);
       cursor: pointer;
@@ -161,13 +197,13 @@
     }
 
     .primary:hover {
-      background: linear-gradient(135deg, #0878ff 0%, var(--brand-hover) 72%);
+      background: linear-gradient(135deg, #0a78ff 0%, var(--brand-hover) 72%);
       box-shadow: 0 11px 25px rgba(8, 104, 242, 0.26);
       transform: translateY(-1px);
     }
 
     .primary:active {
-      box-shadow: 0 6px 16px rgba(8, 104, 242, 0.2);
+      box-shadow: 0 6px 16px rgba(8, 104, 242, 0.20);
       transform: translateY(0);
     }
 
@@ -306,31 +342,192 @@
 
     /* Matches the surrounding row: a plain control with the panel's own ink and border colours, so
        the choice reads as part of the settings rather than as a form dropped into them. */
-    .spent-mode {
-      min-height: 30px;
-      padding: 0 6px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--white);
-      color: var(--ink);
-      font: inherit;
-      font-size: 12px;
-      cursor: pointer;
+    /* Section heading, styled the way prompt-queue does it: small, uppercase, letter-spaced, with the
+       section's own action sitting at the far end of the same row. */
+    .section-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 10px 0 8px;
+      padding: 0 2px;
+      color: var(--muted);
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: .09em;
+      text-transform: uppercase;
     }
 
-    .spent-mode:focus-visible,
-    .spent-delay:focus-visible {
+    /* The heading row's action: an icon, sized to the heading, so the row stays one line and the
+       control reads as belonging to the section rather than to the window. */
+    .icon-button {
+      display: inline-grid;
+      width: 26px;
+      height: 26px;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      color: var(--muted);
+      background: var(--white);
+      cursor: pointer;
+      transition: border-color .14s ease, color .14s ease, background .14s ease;
+    }
+
+    .icon-button svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .icon-button:hover:not(:disabled) {
+      border-color: var(--brand);
+      color: var(--brand-hover);
+      background: var(--brand-soft);
+    }
+
+    .icon-button:focus-visible {
       outline: 2px solid var(--brand);
       outline-offset: 1px;
-      border-color: transparent;
+    }
+
+    .icon-button:disabled {
+      cursor: default;
+      opacity: .45;
+    }
+
+    /* Four cards, one per answer. The shape is prompt-queue's step card: a 3px left edge that turns
+       accent on the chosen one, a header you click to expand, and the card's own settings revealed
+       inside the card rather than in a panel of its own. The icon buttons live in the header's right
+       column and stay there whether the card is open or closed. */
+    .spent-modes {
+      display: grid;
+      gap: 8px;
+      margin: 0 0 4px;
+    }
+
+    .spent-card {
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--line);
+      border-radius: 6px;
+      background: var(--white);
+      overflow: hidden;
+      transition: border-color .17s ease;
+    }
+
+    .spent-card[data-selected='true'],
+    .spent-card:hover {
+      border-left-color: var(--brand);
+    }
+
+    /* list-style and the marker only apply to the one card that opens; on the plain cards this rule
+       is inert. Both are needed, or the summary would carry the disclosure triangle. */
+    .spent-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 11px 10px 12px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .spent-head::-webkit-details-marker {
+      display: none;
+    }
+
+    /* Only the card that opens is a summary; the other three are plain heads and take no pointer. */
+    div.spent-head {
+      cursor: default;
+    }
+
+    .spent-head:focus-visible {
+      outline: 2px solid var(--brand);
+      outline-offset: -3px;
+    }
+
+    .spent-body {
+      display: flex;
+      min-width: 0;
+      flex: 1;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .spent-body strong {
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .spent-body em {
+      color: var(--muted);
+      font-size: 11px;
+      font-style: normal;
+      line-height: 1.35;
+    }
+
+    .spent-card[data-selected='true'] .spent-body strong {
+      color: var(--brand-hover);
+    }
+
+    /* The action column: always present, always in the same place. An icon that appeared only when
+       the card expanded would move the control the user came to press. */
+    .spent-tools {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .card-action {
+      display: inline-grid;
+      width: 27px;
+      height: 27px;
+      place-items: center;
+      border: 0;
+      border-radius: 3px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      transition: color .14s ease, background .14s ease;
+    }
+
+    .card-action svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .card-action:hover:not(:disabled) {
+      color: var(--brand-hover);
+      background: var(--brand-soft);
+    }
+
+    .card-action:focus-visible {
+      outline: 2px solid var(--brand);
+      outline-offset: 1px;
+    }
+
+    .card-action:disabled {
+      cursor: default;
+      opacity: .38;
+    }
+
+    /* The expanded part of a card: a rule, then whatever settings that answer owns. */
+    .spent-body-panel {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 11px 12px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
     }
 
     .spent-delay {
-      width: 62px;
-      min-height: 30px;
+      width: 58px;
+      min-height: 26px;
       padding: 0 6px;
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 5px;
       background: var(--white);
       color: var(--ink);
       font: inherit;
@@ -338,35 +535,20 @@
       text-align: right;
     }
 
+    .spent-delay:focus-visible {
+      outline: 2px solid var(--brand);
+      outline-offset: 1px;
+      border-color: transparent;
+    }
+
     .unit {
       color: var(--muted);
-      font-size: 12px;
-      margin-left: -2px;
+      font-size: 11px;
     }
 
-    .toast {
-      position: fixed;
-      z-index: 10;
-      right: 22px;
-      bottom: 132px;
-      left: 22px;
-      padding: 10px 12px;
-      border: 1px solid rgba(8, 104, 242, 0.12);
-      border-radius: 10px;
-      background: rgba(238, 245, 255, 0.96);
-      box-shadow: 0 9px 26px rgba(20, 47, 88, 0.1);
-      color: #24558f;
-      font-size: 12px;
-      line-height: 1.45;
-      opacity: 0;
-      pointer-events: none;
-      transform: translateY(6px);
-      transition: opacity 160ms ease, transform 160ms ease;
-    }
-
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
+    @media (prefers-reduced-motion: reduce) {
+      .spent-card,
+      .card-action { transition: none; }
     }
 
     button:focus-visible {

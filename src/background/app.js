@@ -30,7 +30,7 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
     const health = createRelayHealth({
         chrome, fetchImpl, url: RELAY_HEALTH_URL, state, timeoutMs: HEALTH_TIMEOUT_MS
     });
-    const keepAlive = createKeepAlive({ chrome, health, host, alarmName: KEEPALIVE_ALARM, keys: KEYS });
+    const keepAlive = createKeepAlive({ chrome, health, host, alarmName: KEEPALIVE_ALARM });
     const usage = createUsageLog({
         chrome, keys: KEYS, defaults: DEFAULTS,
         historyLimit: RESET_HISTORY_LIMIT, usageWindowMs: USAGE_WINDOW_MS, usageCap: USAGE_CAP
@@ -38,25 +38,23 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
     const identity = createHeaderRules({ chrome, log });
     const trail = createTrail({ chrome, key: KEYS.trail });
     const route = createMessageRouter({
-        chrome, keys: KEYS, keepAlive, host, health, usage, identity, trail
+        chrome, keys: KEYS, keepAlive, health, usage, identity, trail
     });
 
     // A live nativePort does not imply a live relay, so the alarm asks the host again rather than
     // trusting the port. The alarm is the only recurring actor in this worker.
 
-    // Apply the persisted switch only after defaults exist; never start the host the user stopped.
-    function applyRelayPreference() {
-        chrome.storage.local.get([KEYS.relayEnabled], stored => {
-            if (stored[KEYS.relayEnabled] === false) {
-                chrome.alarms.clear(KEEPALIVE_ALARM);
-                host.disconnect();
-                chrome.storage.local.set({ [KEYS.relayOnline]: false });
-                return;
-            }
-
-            keepAlive.ensureAlarm();
-            host.ensure();
-        });
+    // The relay always runs.
+    //
+    // It used to be a switch, kept because it was unclear when turning it off might help. It never
+    // helped: the detection socket is rerouted to the relay by URL alone, so stopping the process does
+    // not fall back to a direct connection - it fails closed, and the page stops detecting with no
+    // sign of why. The relay is also the only thing that puts a synthetic address on the socket, and
+    // without that the ticket's address and the socket's disagree, which the server refuses every
+    // time. There is no working configuration with it off, so there is nothing to switch.
+    function startRelay() {
+        keepAlive.ensureAlarm();
+        host.ensure();
     }
 
     function start() {
@@ -68,11 +66,11 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
         registerMenuClick({ chrome, id: MENU_ID, url: SITE_URL });
 
         chrome.runtime.onInstalled.addListener(() => {
-            usage.seedDefaults(applyRelayPreference);
+            usage.seedDefaults(startRelay);
             createMenu({ chrome, id: MENU_ID, title: MENU_TITLE });
         });
 
-        chrome.runtime.onStartup.addListener(applyRelayPreference);
+        chrome.runtime.onStartup.addListener(startRelay);
 
         chrome.runtime.onMessage.addListener(route);
 
@@ -87,10 +85,8 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
         // so the map describes the browser instead of starting out empty.
         identity.sync();
 
-        // Worker wake-up must respect the saved switch instead of re-creating the alarm blindly.
-        chrome.storage.local.get([KEYS.relayEnabled], stored => {
-            if (stored[KEYS.relayEnabled] !== false) keepAlive.ensureAlarm();
-        });
+        // Worker wake-up must re-create the alarm rather than assume the last one survived.
+        keepAlive.ensureAlarm();
     }
 
     return { start, host, health, keepAlive, usage, route };

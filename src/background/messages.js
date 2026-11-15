@@ -5,24 +5,8 @@
 // and unknown actions return false — returning true there would hold the channel open forever
 // because no callback is ever scheduled.
 
-export function createMessageRouter({ chrome, keys, keepAlive, host, health, usage, identity, trail }) {
+export function createMessageRouter({ chrome, keys, keepAlive, health, usage, identity, trail }) {
     const handlers = {
-        setRelay(request, sender, respond) {
-            const enabled = request.enabled !== false;
-            chrome.storage.local.set({ [keys.relayEnabled]: enabled });
-
-            if (enabled) {
-                keepAlive.ensureAlarm();
-                host.command('ensure');
-            } else {
-                chrome.alarms.clear(keepAlive.alarmName);
-                host.disconnect();
-            }
-
-            health.ping().then(() => respond({ status: 'success', online: !!health.isOnline() }));
-            return true;
-        },
-
         relayHealth(request, sender, respond) {
             health.ping()
                 .then(body => respond({ status: 'success', ok: !!(body && body.ok), body }))
