@@ -204,7 +204,13 @@
             signedIn: ZQ.signedIn(),
             // What the page says is left, so the panel can show the number instead of only
             // "ready" and leave the user to open the page and look.
-            remaining: quota.remaining
+            //
+            // Null when the page shows no counter - the exhausted button says "今日次数已用完" with no
+            // number in it. Passing the last value seen through would have the panel report an
+            // allowance that the page has already spent: the panel said "3 left" while the button
+            // said the day's allowance was gone.
+            remaining: quota.exhausted ? 0 : quota.remaining,
+            quotaExhausted: !!quota.exhausted
         };
     };
 
@@ -358,15 +364,8 @@
         }
     };
 
-    // A page that already shows an exhausted allowance and then sits still produces no DOM change
-    // and no click, so neither existing trigger fires — the common case, because the user opens the
-    // page after the allowance is spent. This asks on a timer instead of waiting to be told.
-    //
-    // rotate() refuses while a rotation is in flight and inside its cooldown, so a tick during a
-    // pending reload cannot stack another one.
-    // How often the page is re-read. Two seconds keeps a spent allowance from sitting on screen
-    // while the user wonders whether anything is happening; rotate() already refuses while one is
-    // in flight, so a short interval cannot stack reloads.
+    // The watchdog asks on a timer, so a page that is already exhausted and sitting still still
+    // rotates without needing a DOM change or a click.
     ZQ.WATCHDOG_MS = 2000;
 
     // Returns a function that stops the watchdog, so a dead context can be shut down explicitly.

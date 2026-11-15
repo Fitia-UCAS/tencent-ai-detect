@@ -50,11 +50,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- live page state -----------------------------------------------------
 
-    const showState = (status, detail, remaining) => {
+    const showState = (status, detail, remaining, quotaExhausted) => {
         const key = LABELS[status] ? status : 'idle';
         // The remaining count is the number the user actually wants; show it beside the state when
         // the page reports one, and leave the label alone when it does not.
-        const suffix = Number.isInteger(remaining) ? ` · ${remaining} left` : '';
+        //
+        // An exhausted page reports zero rather than its last seen number, and the state word already
+        // says the allowance is gone - repeating "0 left" beside "Quota reached" adds noise without
+        // adding information.
+        const suffix = quotaExhausted
+            ? ''
+            : Number.isInteger(remaining) ? ` · ${remaining} left` : '';
         stateValue.textContent = LABELS[key] + suffix;
         stateValue.dataset.state = key;
         stateValue.title = detail || '';
@@ -67,7 +73,12 @@ document.addEventListener('DOMContentLoaded', () => {
             showState('away');
             return;
         }
-        showState(report.status || 'idle', report.signedIn ? 'Signed in' : '', report.remaining);
+        showState(
+            report.status || 'idle',
+            report.signedIn ? 'Signed in' : '',
+            report.remaining,
+            report.quotaExhausted
+        );
     };
 
     const readActiveTab = () => {
