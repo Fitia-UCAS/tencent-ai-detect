@@ -37,8 +37,6 @@
     "stop:relay": "node tools/stop-relay.cjs",
     "style": "node tools/normalize-style.cjs --write",
     "style:check": "node tools/normalize-style.cjs",
-    "switch:dev": "node scripts/switch-branch.cjs dev",
-    "switch:main": "node scripts/switch-branch.cjs main",
     "test:auto-detect": "node tests/unit/test-auto-detect.cjs",
     "test:auto-rotation": "node tests/unit/test-auto-rotation.cjs",
     "test:background-health": "node tests/unit/test-background-health.cjs",

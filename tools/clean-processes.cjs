@@ -31,16 +31,41 @@ function commandArguments(commandLine) {
 }
 
 // The launcher spec for the host is
-//   node "%~dp0..\scripts\nm-host.cjs"
-// so its command line carries a literal "host\..\scripts" segment. Comparing raw text
+//   node "%~dp0..\src\host\native-host.cjs"
+// so its command line carries a literal "host\..\src\host" segment. Comparing raw text
 // against the resolved path therefore misses the only host the browser actually starts,
 // which silently reduces clean:processes to relay-only cleanup. Normalising each argument
 // as a Windows path resolves the ".." before the comparison, without loosening what counts
 // as a match: the result must still equal this checkout's exact script path, so
-// scripts/test-relay.cjs and sibling checkouts stay unmatched.
+// tests/unit/test-relay-pid.cjs and sibling checkouts stay unmatched.
+//
+// The script name alone is not enough to build the target. Both roles moved once already
+// (relay: scripts/relay.cjs -> src/relay/server.cjs, host: scripts/nm-host.cjs ->
+// src/host/native-host.cjs), and hard-coding the old locations is what left this tool
+// classifying nothing at all on the current tree: every process fell through processKind as
+// null, so `npm run clean:processes` reported "no verified relay or native host" while one
+// was running. Both locations are now candidates, and the exact-path equality that makes the
+// match safe is unchanged.
+const ENTRY_POINTS = Object.freeze({
+    'nm-host': ['src\\host\\native-host.cjs', 'scripts\\nm-host.cjs'],
+    relay: ['src\\relay\\server.cjs', 'scripts\\relay.cjs']
+});
+
+function candidatesFor(role, root) {
+    return ENTRY_POINTS[role].map(relative => path.win32.normalize(`${root}\\${relative}`).toLowerCase());
+}
+
 function matchesEntryPoint(commandLine, scriptName, projectRoot = PROJECT) {
     const root = normalizeRoot(projectRoot);
-    const target = path.win32.normalize(`${root}\\scripts\\${scriptName}`).toLowerCase();
+
+    // `scriptName` is a role key ('relay' | 'nm-host'), or a bare file name for callers that
+    // still pass one. A bare name is resolved against both known layouts for that file.
+    const roles = ENTRY_POINTS[scriptName]
+        ? [scriptName]
+        : (scriptName === 'relay.cjs' ? ['relay'] : (scriptName === 'nm-host.cjs' ? ['nm-host'] : []));
+    if (!roles.length) return false;
+
+    const targets = roles.flatMap(role => candidatesFor(role, root));
 
     for (const argument of commandArguments(commandLine)) {
         const value = argument.trim();
@@ -48,7 +73,7 @@ function matchesEntryPoint(commandLine, scriptName, projectRoot = PROJECT) {
 
         // Only consider arguments that name this script, then resolve the path.
         const normalized = path.win32.normalize(value.replace(/\//g, '\\'));
-        if (normalized.toLowerCase() === target) return true;
+        if (targets.includes(normalized.toLowerCase())) return true;
     }
 
     return false;
@@ -56,8 +81,8 @@ function matchesEntryPoint(commandLine, scriptName, projectRoot = PROJECT) {
 
 function processKind(proc, projectRoot = PROJECT) {
     const command = proc && proc.command;
-    if (matchesEntryPoint(command, 'nm-host.cjs', projectRoot)) return 'nm-host';
-    if (matchesEntryPoint(command, 'relay.cjs', projectRoot)) return 'relay';
+    if (matchesEntryPoint(command, 'nm-host', projectRoot)) return 'nm-host';
+    if (matchesEntryPoint(command, 'relay', projectRoot)) return 'relay';
     return null;
 }
 

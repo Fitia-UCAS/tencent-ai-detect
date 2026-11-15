@@ -9,11 +9,13 @@ const { spawnSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 
-// The relay does not live in the same place on every branch: dev keeps it at
-// src/relay/server.cjs, main at scripts/relay.cjs (see scripts/switch-branch.cjs). This file used
-// to resolve a single hard-coded tools/relay.cjs, which exists on neither branch, so the lookup
-// returned null everywhere and every caller that needs to attribute the port - stop-relay, the
-// crash-recovery test, the native lifecycle test - could not identify the relay at all.
+// This file used to resolve a single hard-coded tools/relay.cjs, which exists nowhere, so the
+// lookup returned null everywhere and every caller that needs to attribute the port - stop-relay,
+// the crash-recovery test, the native lifecycle test - could not identify the relay at all.
+//
+// The relay lives at src/relay/server.cjs. The lookup still accepts a scripts/relay.cjs candidate,
+// because a relay launched from an older checkout or a manual `node scripts/relay.cjs` is still
+// something this tool should be able to attribute rather than mistake for a stranger on the port.
 //
 // Both spellings are checked against the files that actually exist in this checkout, so following
 // the branch needs no edit here.

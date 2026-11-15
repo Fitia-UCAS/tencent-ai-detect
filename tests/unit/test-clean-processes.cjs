@@ -23,7 +23,23 @@ const cases = [
     ['parent escape to a sibling is not this checkout',
         `node.exe "${root}\\..\\other\\scripts\\relay.cjs"`, null],
     ['suffix appended to the script name is not the entry point',
-        `node.exe "${root}\\scripts\\xrelay.cjs"`, null]
+        `node.exe "${root}\\scripts\\xrelay.cjs"`, null],
+
+    // The roles moved once already, and hard-coding the old location left this tool classifying
+    // nothing on the current tree while a relay was running. Both layouts must keep working: the
+    // current one so cleanup actually functions, the old one so a process launched before the move
+    // is still recognised instead of being mistaken for a stranger on the port.
+    ['relay at its current path', `node.exe "${root}\\src\\relay\\server.cjs"`, 'relay'],
+    ['relay at its current path, forward slashes',
+        `node.exe "${root.replace(/\\/g, '/')}/src/relay/server.cjs"`, 'relay'],
+    ['native host at its current path, launched through the batch file',
+        `node "${root}\\host\\..\\src\\host\\native-host.cjs"`, 'nm-host'],
+    ['native host at its current path, forward slashes',
+        `node "${root.replace(/\\/g, '/')}/host/../src/host/native-host.cjs"`, 'nm-host'],
+    ['relay module is not the entry point',
+        `node.exe "${root}\\src\\relay\\config.cjs"`, null],
+    ['a sibling checkout of the current layout is not this checkout',
+        `node.exe "E:\\edge-extensions\\tencent-ai-detect-next\\src\\relay\\server.cjs"`, null]
 ];
 
 let failures = 0;
@@ -43,5 +59,5 @@ if (failures) {
     process.stderr.write(`\n${failures} process identity check(s) failed\n`);
     process.exitCode = 1;
 } else {
-    process.stdout.write('\nPASS: 13/13 process identity checks\n');
+    process.stdout.write(`\nPASS: ${cases.length}/${cases.length} process identity checks\n`);
 }
