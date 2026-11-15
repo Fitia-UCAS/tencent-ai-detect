@@ -116,6 +116,9 @@ for (const [tabId, run] of Object.entries(newest)) {
     let previous = null;
     for (const event of run.events || []) {
         const gap = previous ? '+' + (Date.parse(event.t) - Date.parse(previous)) + 'ms' : '';
+        // The frames are printed whole: a ticket and a verdict are short, and a report frame's counts
+        // are what say whether a refusal cancelled a real result. Shortening them here would be
+        // withholding the evidence that was collected precisely to answer this question.
         const detail = event.detail === null || event.detail === undefined
             ? ''
             : ' ' + JSON.stringify(event.detail);

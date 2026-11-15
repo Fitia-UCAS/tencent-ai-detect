@@ -28,3 +28,6 @@ host/nm-manifest.local.json
 
 # Scratch output from refactors
 tmp-refactor/
+
+# Upstream page sources kept for protocol analysis (third-party code, not ours to version).
+.zq-upstream/

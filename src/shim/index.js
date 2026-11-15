@@ -234,17 +234,19 @@
             };
 
             sock.onmessage = event => {
-                // Record what the server actually said, not what the page made of it.
+                // Record the whole frame, not a preview.
                 //
                 // "Invalid request" is a string the page renders, and by the time it is on screen the
-                // frame that carried it is gone: entries look identical whether the refusal came from
-                // this load's request or an earlier one, and a success looks identical to a stale
-                // panel. Keeping the first frame's opening bytes makes the two distinguishable.
+                // frame that carried it is gone. A preview was enough to tell a verdict from a
+                // handshake, but not enough to tell two failures apart: the diff verdict and the
+                // refusal that follows it are different lengths, and the report frame carries the
+                // counts that show whether the refusal cancelled a real result. Truncating those was
+                // withholding the evidence to keep a log small, which is backwards while diagnosing.
                 try {
                     const data = typeof event.data === 'string' ? event.data : '';
                     if (data) {
                         window.dispatchEvent(new CustomEvent('zq:relay-frame', {
-                            detail: data.slice(0, 400)
+                            detail: data
                         }));
                     }
                 } catch (e) {
@@ -364,6 +366,19 @@
             // request waiting for a reply the server was never asked for. Guarded by
             // "a stale open handler sending into a connecting socket delivers every send".
             if (!this._sock) return;
+
+            // Every outbound frame is recorded whole, because the outbound side is where the question
+            // actually is: the server answers code 21 when it rejects the captcha ticket, and the only
+            // way to tell a ticket that was reused from one that was signed for a different address is
+            // to see the ticket that was sent. Recording replies alone answered "what did it say" and
+            // left "what did we ask" to guesswork.
+            try {
+                const text = typeof data === 'string' ? data : '[binary]';
+                window.dispatchEvent(new CustomEvent('zq:relay-sent', { detail: text }));
+            } catch (e) {
+                // Reporting must not break the send it is describing.
+            }
+
             this._sock.send(data);
         }
 

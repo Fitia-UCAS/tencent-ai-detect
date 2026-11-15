@@ -581,9 +581,22 @@
 
             ZQ.trace('relay-frame', {
                 bytes: data.length,
-                // Enough of the opening to tell a verdict from a handshake, without storing the
-                // report body the page goes on to render.
-                head: data.slice(0, 160)
+                body: data
+            });
+        });
+
+        // And what was asked, whole.
+        //
+        // The outbound side is where the unanswered question is: the server answers code 21 when it
+        // rejects the captcha ticket, and telling a reused ticket from one signed for another address
+        // needs the ticket that was actually sent. Replies alone said what came back, never what
+        // produced it.
+        window.addEventListener('zq:relay-sent', event => {
+            const data = event && event.detail ? String(event.detail) : '';
+
+            ZQ.trace('relay-sent', {
+                bytes: data.length,
+                body: data
             });
         });
     }

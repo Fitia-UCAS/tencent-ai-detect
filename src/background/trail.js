@@ -14,7 +14,10 @@
 // does not erase the run that caused the problem. The key is per tab, because two tabs are two
 // independent runs and interleaving them makes both unreadable.
 
-const TRAIL_LIMIT = 80;
+// A whole diagnosis run is what has to fit, not a sample of it: the frames are now recorded in full,
+// and a report frame or a ticket is a few hundred bytes. 80 entries could hold one exchange on a good
+// day and lost the beginning of the story on a bad one.
+const TRAIL_LIMIT = 400;
 
 function nowIso() {
     return new Date().toISOString();
