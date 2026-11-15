@@ -1,34 +1,18 @@
-# 朱雀 AI 检测助手
+# 朱雀检测无限使用插件
 
-[English](README.md) · 简体中文
+朱雀检测无限使用插件，用于 <https://matrix.tencent.com/ai-detect/>。
 
-用于 <https://matrix.tencent.com/ai-detect/> 的 Edge 扩展（Manifest V3）。朱雀按出口地址计次，地址一换就能继续检测；这个扩展负责在你察觉不到的时候把地址换掉，页面上的文本和登录态都留在原处。
+[English](README.md)
 
-## 它做什么
+Copyright (C) 2026 Fitia
 
-检测次数快用完时自动切换到新地址，并提供一个侧栏让你决定换的时机：立即换、延迟几秒换，或者等你按下「立即检测」再换。等待期间页面不会自己刷新，草稿不会丢。
+本项目以 GNU 通用公共许可证第 3 版（GPL-3.0）发布，不是宽松许可：你可以自由使用、修改、再分发，
+但分发修改后的版本时必须一并提供源代码，并且不能用它去构建闭源的分发版。完整条款见 [LICENSE](LICENSE)，
+正文为官方原文，未作任何改动。
 
-## 安装
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU
+General Public License as published by the Free Software Foundation, version 3.
 
-需要 Node.js（用于本机中转进程）和 Edge。
-
-1. 打开 `edge://extensions`，开启「开发人员模式」。
-2. 点「加载解压缩的扩展」，选择本项目目录。
-3. 在项目目录执行 `npm run host:register`，注册本机中转所需的原生消息宿主。
-4. 回到 `edge://extensions`，重新加载扩展。
-
-第 3 步只做一次；之后移动了项目目录，需要重新执行一次——宿主清单里写的是绝对路径。
-
-若想直接从发布包安装而不克隆仓库，从 Releases 页下载 zip，解压后把第 2 步指向解压出来的目录即可。
-
-## 使用
-
-点工具栏图标打开侧栏。里面能看到当前地址、剩余次数、以及换地址的时机选项。默认等待你手动确认，不会打断你正在写的内容。
-
-## 已知问题
-
-见 [TODO.md](TODO.md)。代理（Clash 等）开启时可能出现 `Invalid Request`：取票走页面自己的 HTTPS，数据 socket 走本机中转，两个出口地址不一致会被服务端拒绝。
-
-## 许可
-
-[GPL-3.0](LICENSE)，Copyright (C) 2026 Fitia。分发修改后的版本必须一并提供源代码。
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
+License for more details.
