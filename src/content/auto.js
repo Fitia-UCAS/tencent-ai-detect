@@ -253,6 +253,15 @@
         // ahead: the install is usually just slower than the first tick.
         if (ZQ.state.identityConfirmed === false) return false;
 
+        // The address is spent, so this press could not be served. Rotating now is the next
+        // detection: the reload mints a fresh address, restores the draft and runs this again on the
+        // other side. Pressing anyway would spend the attempt on a refusal and leave the address to
+        // be rotated after the fact, which is the reload the user never got to see the result of.
+        if (ZQ.identitySpent()) {
+            ZQ.rotate('identity-exhausted-auto');
+            return false;
+        }
+
         const print = fingerprint(text);
         const previous = settleAttempt();
 

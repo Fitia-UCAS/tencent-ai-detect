@@ -1,9 +1,15 @@
-// Measures when the page reloads itself once the address count reaches the limit.
+// Measures what the page does once the address count reaches the limit.
 //
-// The claim under test: the watchdog reads the count every two seconds and rotates as soon as it is
-// exhausted, so the result of the last usable detection is on screen for about two seconds and is
-// then thrown away by the reload. This sets the count directly instead of spending real detections,
-// so nothing is consumed on the site's quota, and watches for a navigation.
+// Two behaviours are distinguished, and only one of them is wanted:
+//
+//   * rotating on its own  - a reload, which destroys the result of the last usable detection. This
+//                            is what happened before: measured at about 1.5s after the count reached
+//                            the limit, so that result was never read.
+//   * reporting and waiting - the page keeps its result, and the rotation happens on the next press
+//                            because that press is the one the spent address cannot serve.
+//
+// This sets the count directly instead of spending real detections, so nothing is consumed on the
+// site's quota, and watches for a navigation for longer than several watchdog ticks.
 const path = require('node:path');
 const fs = require('node:fs');
 const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
@@ -12,6 +18,9 @@ const EXT = path.resolve(__dirname, '..', '..');
 const PORT = 9488;
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
+
+// Longer than the 2s watchdog interval, several times over.
+const WATCH_MS = 7000;
 
 const EDGE = [
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -56,12 +65,22 @@ async function findWorker() {
         const tabId = created.result && created.result.value;
 
         let target = null;
-        for (let i = 0; i < 40 && !target; i += 1) {
+        for (let i = 0; i < 60 && !target; i += 1) {
             const targets = await httpJson(PORT, '/json/list');
             target = (targets || []).find(t => t.type === 'page' && (t.url || '').includes('matrix.tencent.com'));
-            if (!target) await sleep(300);
+            if (!target) {
+                if (i > 0 && i % 20 === 0) {
+                    console.log('still looking; targets so far:',
+                        (targets || []).map(t => t.type + ' ' + String(t.url).slice(0, 60)).join(' | '));
+                }
+                await sleep(300);
+            }
         }
-        if (!target) throw new Error('no page target');
+        if (!target) {
+            const targets = await httpJson(PORT, '/json/list');
+            console.log('targets:', JSON.stringify((targets || []).map(t => ({ type: t.type, url: t.url })), null, 1));
+            throw new Error('no page target');
+        }
 
         const conn = await cdp(target.webSocketDebuggerUrl);
         const contexts = [];
@@ -107,26 +126,31 @@ async function findWorker() {
         const before = navigations;
         const startedAt = Date.now();
 
-        // Look for the reload over a window comfortably longer than one watchdog tick.
-        for (let i = 0; i < 16; i += 1) {
+        // Watch across several watchdog ticks.
+        while (Date.now() - startedAt < WATCH_MS) {
             await sleep(250);
             if (navigations > before) break;
         }
 
         const elapsed = Date.now() - startedAt;
-        console.log('reloaded     :', navigations > before ? 'YES after ~' + elapsed + 'ms' : 'no (16 ticks observed)');
+        const reloaded = navigations > before;
 
-        if (navigations > before) {
-            // Prove the marker - the stand-in for the result - was taken with it.
-            const gone = await conn.send('Runtime.evaluate', {
-                expression: `!document.getElementById('zq-result-marker')`,
-                returnByValue: true
-            });
-            console.log('result lost  :', gone.result && gone.result.value ? 'YES, the marker is gone' : 'no, marker survived');
-            console.log('\nCONFIRMED: the count reaching the limit reloads the page on its own,');
-            console.log('so the last usable result is destroyed about ' + elapsed + 'ms after it lands.');
+        console.log('watched      :', elapsed + 'ms (watchdog ticks: 2s each)');
+        console.log('reloaded     :', reloaded ? 'YES after ~' + elapsed + 'ms' : 'no');
+
+        const marker = await conn.send('Runtime.evaluate', {
+            expression: `!!document.getElementById('zq-result-marker')`,
+            returnByValue: true
+        });
+        console.log('result kept  :', marker.result && marker.result.value ? 'YES, still on the page' : 'NO, it is gone');
+
+        if (reloaded) {
+            console.log('\nFAIL: the page rotated on its own, so the last usable result was destroyed.');
+            console.log('The rotation must wait for the next press instead.');
+            process.exitCode = 1;
         } else {
-            console.log('\nNOT CONFIRMED: the count reaching the limit did not reload the page in this run.');
+            console.log('\nPASS: a spent address no longer reloads the page by itself.');
+            console.log('The result stays visible; the next press is what rotates.');
         }
 
         conn.close();

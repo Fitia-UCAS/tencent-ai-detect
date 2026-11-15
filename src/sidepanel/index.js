@@ -12,11 +12,13 @@ const LABELS = {
     idle: 'Ready',
     ok: 'Ready',
     quota: 'Quota reached',
+    'identity-spent': 'Address used up — next press rotates',
     captcha: 'Verification needed',
     ambiguous: 'Check the page',
     'signed-in': 'Signed in',
     rotated: 'Rotated',
     'relay-offline': 'Relay offline',
+    'rotation-suppressed': 'Auto refresh off',
     away: 'Open the detection page'
 };
 

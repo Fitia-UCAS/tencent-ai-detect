@@ -53,10 +53,11 @@
                 if (!ZQ.state.enabled || ZQ.state.rotating) return;
 
                 // Measured: an address serves four handshakes and is refused from the fifth onwards.
-                // Reloading before that point costs nothing and moves the page onto a fresh address,
-                // so the user never meets that refusal. Deciding on the count rather than on the
-                // refusal keeps rotate() off an ambiguous message, which once caused a reload loop.
-                if (ZQ.identityUses() >= ZQ.USES_PER_IDENTITY) {
+                // Deciding on the count rather than on the refusal keeps rotate() off an ambiguous
+                // message, which once caused a reload loop. This press is the one the spent address
+                // cannot serve, so it is the moment to rotate rather than after watching it be
+                // refused: the reload mints a fresh address and auto mode runs it again.
+                if (ZQ.identitySpent()) {
                     ZQ.rotate('identity-exhausted');
                     return;
                 }

@@ -91,9 +91,24 @@ check('an identity from an earlier load is NOT reused', () => {
 
 check('the reload happens before the fifth handshake', () => {
     assert.match(identity, /ZQ\.USES_PER_IDENTITY = 4;/, 'the measured limit must be stated once');
-    assert.match(contentIndex, /if \(ZQ\.identityUses\(\) >= ZQ\.USES_PER_IDENTITY\)/,
-        'the reload must be driven by the socket count, not by clicks');
+    assert.match(identity, /ZQ\.identitySpent = function identitySpent\(\) \{[\s\S]{0,200}?USES_PER_IDENTITY/,
+        'the limit must be decided from the socket count, in one place');
+    assert.match(contentIndex, /if \(ZQ\.identitySpent\(\)\)/,
+        'and the press must consult it rather than the refusal');
     assert.match(contentIndex, /ZQ\.rotate\('identity-exhausted'\)/, 'and it must actually rotate');
+});
+
+// Measured: reaching the limit reloaded the page about 1.5s after the last usable detection landed,
+// so its result was destroyed before it could be read. The rotation now waits for the next press.
+check('the watchdog reports a spent address instead of reloading on its own', () => {
+    const engine = read('src/content/engine.js');
+    const watchdog = engine.slice(engine.indexOf('ZQ.startWatchdog'));
+
+    assert.match(watchdog, /if \(ZQ\.identitySpent\(\)\)/,
+        'the watchdog still has to notice the spent address, since a click is not guaranteed');
+    assert.match(watchdog, /ZQ\.reportSpentOnce\(\)/, 'but it reports it');
+    assert.ok(!/identitySpent\(\)\)\s*\{\s*\n\s*ZQ\.rotate\(/.test(watchdog),
+        'and must not rotate: that reload would throw the visible result away');
 });
 
 check('the identity module is loaded before it is used', () => {

@@ -128,6 +128,15 @@
     ZQ.rotate = async function (reason) {
         if (!ZQ.state.enabled || ZQ.state.rotating) return;
 
+        // Auto refresh is the switch for every reload this page performs, not only for the automatic
+        // detections: with it off nothing here reloads the page at all, and the reload becomes the
+        // user's own decision. The state is reported so the panel says why nothing moved, instead of
+        // looking as though the rotation quietly failed.
+        if (!ZQ.state.autoRefresh) {
+            ZQ.reportState(ZQ.currentState('rotation-suppressed'));
+            return;
+        }
+
         // A challenge on screen means the page is waiting on the user, not on a new address.
         // Rotating now would reload mid-challenge and discard their work.
         if (ZQ.captchaOpen()) {
@@ -254,13 +263,16 @@
             if (!ZQ.state.enabled || !ZQ.state.autoRefresh || ZQ.state.rotating) return;
 
             // The address limit is checked here, not only after a click. Detecting the detect button
-            // by its text is best-effort - a variant that does not use the detect wording and whose class
-            // neither "detect" nor "check" leaves the count rising with nothing watching it. The fifth
-            // handshake is then refused and the page shows "Invalid request", which no rotation can
-            // undo because that address is already spent. Reading the stored count makes the trigger
-            // exact no matter how the detection was started.
-            if (ZQ.identityUses() >= ZQ.USES_PER_IDENTITY) {
-                ZQ.rotate('identity-exhausted');
+            // by its text is best-effort - a variant that does not use the detect wording and whose
+            // class neither "detect" nor "check" leaves the count rising with nothing watching it.
+            // Reading the stored count makes the trigger exact no matter how the detection started.
+            if (ZQ.identitySpent()) {
+                // Report it, do not rotate. A rotation is a reload, and the reload destroys the
+                // result of the last usable detection: measured at about 1.5s after the count reached
+                // the limit, which is why that result was never seen. The address is spent rather
+                // than wrong, so the page keeps showing what it has until the user asks for another
+                // detection - that press is what rotates, because the press could not be served.
+                ZQ.reportSpentOnce();
                 return;
             }
 

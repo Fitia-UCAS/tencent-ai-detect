@@ -16,7 +16,7 @@ const SOURCE = fs.readFileSync(path.join(__dirname, '../../src/content/engine.js
 
 // `relayOk` is what the worker answers to the health probe. `send` records every message so the
 // recovery path can be read from the outside.
-function load({ relayOk = false, enabled = true, alive = true, rotating = false, storage, getFails = false, setFails = false, silentWrite = false, noStorage = false } = {}) {
+function load({ relayOk = false, enabled = true, alive = true, rotating = false, autoRefresh = true, storage, getFails = false, setFails = false, silentWrite = false, noStorage = false } = {}) {
     // The reload budget lives in extension storage, so a test that spans a reload shares this map.
     // The page's own localStorage is present but deliberately irrelevant: the page owns it, so it
     // must not be able to influence the budget either way.
@@ -30,7 +30,7 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false,
     let nextTimer = 1;
 
     const ZQ = {
-        state: { enabled, autoRefresh: true, rotating, contextAlive: alive, retryTimer: null },
+        state: { enabled, autoRefresh, rotating, contextAlive: alive, retryTimer: null },
         // Constants the real module reads.
         CAPTCHA_WAIT_MS: 2000,
         RELAY_RETRY_MS: 2500,
@@ -382,6 +382,34 @@ check('a rotation already in flight owns the recovery', async () => {
 
     assert.equal(page.actions().includes('relayEnsure'), false);
     assert.deepEqual(page.statuses(), []);
+});
+
+// --- auto refresh as the switch for every self-started reload -----------------
+
+check('auto refresh off suppresses a rotation instead of reloading', async () => {
+    const page = load({ relayOk: true, autoRefresh: false });
+    await page.ZQ.rotate('quota');
+
+    assert.equal(page.reloads.length, 0, 'no reload may happen with auto refresh off');
+    assert.deepEqual(page.statuses(), ['rotation-suppressed'],
+        'the panel must be told the reload was suppressed, not that nothing happened');
+});
+
+check('auto refresh off suppresses the reset button too', async () => {
+    // The switch is the whole switch: nothing on this page reloads while it is off, including the
+    // panel's reset. Reloading there anyway would be the auto behaviour coming back through a side door.
+    const page = load({ relayOk: true, autoRefresh: false });
+    await page.ZQ.rotate('manual');
+
+    assert.equal(page.reloads.length, 0, 'the reset must not reload either');
+});
+
+check('auto refresh on rotates as before', async () => {
+    const page = load({ relayOk: true, autoRefresh: true });
+    await page.ZQ.rotate('quota');
+
+    page.fireTimers();
+    assert.equal(page.reloads.length, 1, 'a rotation reloads the page');
 });
 
 (async () => {

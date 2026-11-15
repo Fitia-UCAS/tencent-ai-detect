@@ -15,10 +15,11 @@ const SOURCE = fs.readFileSync(
 
 // A page with one editor and one detect button. `clicks` records what the extension pressed so the
 // assertions can be about behaviour rather than about markup.
-function load({ text = '', disabled = false, captcha = false, failStorageWrites = false } = {}) {
+function load({ text = '', disabled = false, captcha = false, failStorageWrites = false, spent = false } = {}) {
     const store = new Map();
     const clicks = [];
     const inputs = [];
+    const rotations = [];
 
     const editor = {
         textContent: text,
@@ -67,7 +68,12 @@ function load({ text = '', disabled = false, captcha = false, failStorageWrites 
     ZQ.state = { enabled: true, autoRefresh: true, rotating: false, contextAlive: true };
     ZQ.captchaOpen = () => captcha;
 
-    return { ZQ, store, clicks, inputs, editor, button };
+    // Both live in other content scripts: identity.js owns the count, engine.js owns rotate(). This
+    // module only calls them, so the sandbox records what it asked for instead of driving a reload.
+    ZQ.identitySpent = () => spent;
+    ZQ.rotate = reason => { rotations.push(reason); };
+
+    return { ZQ, store, clicks, inputs, editor, button, rotations };
 }
 
 const failures = [];
@@ -104,6 +110,29 @@ check('new text is detected again', () => {
     page.editor.textContent = '第二段';
     page.ZQ.autoDetect();
     assert.equal(page.clicks.length, 2, 'each distinct text is one detection');
+});
+
+check('nothing is pressed once the address is spent', () => {
+    // The press could not be served: the fifth handshake on a spent address is refused every time.
+    // Rotating instead is what turns the press into the next detection rather than into a refusal.
+    const page = load({ text: '文字', spent: true });
+
+    assert.equal(page.ZQ.autoDetect(), false, 'a spent address must not be pressed');
+    assert.equal(page.clicks.length, 0, 'the attempt must not be spent on a refusal');
+    assert.deepEqual(page.rotations, ['identity-exhausted-auto'], 'it must rotate instead');
+    assert.equal(page.ZQ.attemptState(), 'idle', 'and nothing may be recorded as attempted');
+});
+
+check('a spent address rotates once, not on every tick', () => {
+    // The interval runs every 1.5s. Once a rotation is in flight the guard stops the next tick, and
+    // the reload that follows replaces this script entirely.
+    const page = load({ text: '文字', spent: true });
+
+    page.ZQ.autoDetect();
+    page.ZQ.state.rotating = true;
+    page.ZQ.autoDetect();
+
+    assert.equal(page.rotations.length, 1, 'the in-flight rotation must not be stacked');
 });
 
 // --- the guards around it --------------------------------------------------

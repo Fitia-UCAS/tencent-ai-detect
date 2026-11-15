@@ -133,6 +133,23 @@
         return Number.isFinite(stored) && stored > 0 ? stored : 0;
     };
 
+    // Whether this load's address can no longer serve a detection. One predicate, so every trigger
+    // agrees on the limit instead of comparing the count itself.
+    ZQ.identitySpent = function identitySpent() {
+        return ZQ.identityUses() >= ZQ.USES_PER_IDENTITY;
+    };
+
+    // The spent state is reported once per load. The watchdog reads the count every two seconds, so
+    // without this the panel would be told the same thing on every tick.
+    let spentReported = false;
+
+    ZQ.reportSpentOnce = function reportSpentOnce() {
+        if (spentReported) return;
+        spentReported = true;
+
+        ZQ.reportState(ZQ.currentState('identity-spent'));
+    };
+
     // The address this load picked, or null before one was chosen.
     ZQ.currentIdentity = function currentIdentity() {
         if (loadIdentity) return loadIdentity;
