@@ -323,6 +323,9 @@
         ZQ.writeState({
             rotations: state.rotations + 1,
             lastRotationAt: Date.now(),
+            // The wait belongs to the address being replaced, so the new one starts unspent and
+            // without a clock already running against it.
+            spentSince: 0,
             ip: 'relay'
         });
 
@@ -343,33 +346,14 @@
         ZQ.scheduleRetry(400);
     };
 
-    // Only a genuine quota hit justifies a reload. A captcha failure belongs to the user, and an
-    // ambiguous refusal is reported without acting.
-    //
-    // The quota branch is guarded by a cooldown because this is called from a MutationObserver, which
-    // fires on every DOM change - and a page mid-detection changes constantly. Measured over nine
-    // minutes of a single session: 176 reloads and 138 loads, peaking at 46 reloads in one minute.
-    // A reload destroys the page that was about to report the real state, the fresh page looks
-    // exhausted again for a moment, and the cycle repeats. The cooldown is what turns that into at
-    // most one reload per window, so the next page gets to settle and say what it actually is.
-    ZQ.QUOTA_ROTATE_COOLDOWN_MS = 30000;
-
+    // What the page shows. A captcha failure belongs to the user, and an ambiguous refusal is
+    // reported without acting; only a spent address is acted on, and how is not decided here - see
+    // onAddressSpent, which is the one place that answers it.
     ZQ.handlePageState = function handlePageState(reason) {
         const state = ZQ.pageState();
 
         if (state === 'quota') {
-            // Read from storage, not memory: a reload replaces this script, and an in-memory stamp
-            // would let the fresh page rotate again immediately - which is the cycle, not the fix.
-            const held = ZQ.readState();
-            const since = Date.now() - (Number(held.lastRotationAt) || 0);
-
-            if (since < ZQ.QUOTA_ROTATE_COOLDOWN_MS) {
-                ZQ.trace('quota-cooldown', { since, reason });
-                ZQ.reportState(ZQ.currentState('quota'));
-                return;
-            }
-
-            ZQ.rotate(reason);
+            ZQ.onAddressSpent(reason);
             return;
         }
 
@@ -410,6 +394,75 @@
         return (Number.isFinite(seconds) && seconds > 0 ? seconds : 30) * 1000;
     };
 
+    // How long the swap modes have to wait after a rotation before they may swap again.
+    ZQ.QUOTA_ROTATE_COOLDOWN_MS = 30000;
+
+    // Whether this address has served everything it can.
+    //
+    // Two things can say so: the count this tab has recorded, and the page saying its allowance is
+    // gone. They are the same question, so they are asked in one place - a caller that answers it for
+    // itself is how the page came to reload while the panel was set to keep it.
+    ZQ.addressSpent = function addressSpent() {
+        return ZQ.identitySpent() || ZQ.pageState() === 'quota';
+    };
+
+    // The one decision about what happens once the address is spent.
+    //
+    // Nothing else reloads the page for this reason. The answer is the user's stored choice, and the
+    // two modes that keep the page must keep it on every path, not only on the one that noticed.
+    ZQ.onAddressSpent = function onAddressSpent(reason) {
+        const mode = ZQ.readSpentMode();
+
+        // Both modes that swap are paced by the same cooldown, because both can be reached from the
+        // observer, which fires on every DOM change while a page mid-detection changes constantly.
+        // Measured over nine minutes of a single session without it: 176 reloads and 138 loads,
+        // peaking at 46 in one minute - the reload destroys the page about to report the real state,
+        // the fresh page looks spent again for a moment, and the cycle repeats.
+        if (mode === 'immediate' || mode === 'delay') {
+            const since = Date.now() - (Number(ZQ.readState().lastRotationAt) || 0);
+
+            if (since < ZQ.QUOTA_ROTATE_COOLDOWN_MS) {
+                ZQ.trace('quota-cooldown', { since, mode, reason });
+                ZQ.reportState(ZQ.currentState('quota'));
+                return;
+            }
+        }
+
+        if (mode === 'immediate') {
+            ZQ.trace('spent-swap', { mode, reason, uses: ZQ.identityUses() });
+            ZQ.forceRotate('spent');
+            return;
+        }
+
+        if (mode === 'delay') {
+            // The wait lives in storage, not in memory: a wait that restarts on every reload would
+            // never finish on a page the user reloads, and this one reloads itself.
+            const held = Number(ZQ.readState().spentSince) || 0;
+            const waitMs = ZQ.readSpentDelayMs();
+
+            if (!held) {
+                ZQ.writeState({ spentSince: Date.now() });
+                ZQ.reportSpentOnce();
+                return;
+            }
+
+            if (Date.now() - held >= waitMs) {
+                ZQ.writeState({ spentSince: 0 });
+                ZQ.trace('spent-swap', { mode, reason, waited: Date.now() - held, waitMs });
+                ZQ.forceRotate('spent');
+                return;
+            }
+
+            ZQ.reportSpentOnce();
+            return;
+        }
+
+        // 'manual' and 'press' both keep the page. 'press' swaps at the press itself, which is handled
+        // where the press is - that is the only place that knows the address was what the press could
+        // not be served from.
+        ZQ.reportSpentOnce();
+    };
+
     // The watchdog asks on a timer, so a page that is exhausted and sitting still is noticed without
     // needing a DOM change or a click.
     ZQ.WATCHDOG_MS = 2000;
@@ -440,54 +493,10 @@
             // The address limit is checked here, not only after a click. Detecting the detect button
             // by its text is best-effort - a variant that does not use the detect wording and whose
             // class neither "detect" nor "check" leaves the count rising with nothing watching it.
-            // Reading the stored count makes the trigger exact no matter how the detection started.
-            if (ZQ.identitySpent()) {
-                // The address has served its five detections, so it cannot serve another. What
-                // happens next is the user's choice, because the three answers trade off different
-                // things: waiting keeps the last result on screen, swapping now keeps a run moving.
-                const mode = ZQ.readSpentMode();
+            // Asking the page as well makes the trigger exact no matter how the detection started.
+            if (!ZQ.addressSpent()) return;
 
-                if (mode === 'immediate') {
-                    ZQ.trace('spent-swap', { mode, uses: ZQ.identityUses() });
-                    ZQ.forceRotate('spent');
-                    return;
-                }
-
-                if (mode === 'delay') {
-                    // The wait starts when the address is first seen spent, and is measured against a
-                    // stored stamp so a reload cannot restart it. The length is the user's setting.
-                    const held = ZQ.state.spentSince || 0;
-                    const waitMs = ZQ.readSpentDelayMs();
-
-                    if (!held) {
-                        ZQ.state.spentSince = Date.now();
-                        ZQ.reportSpentOnce();
-                        return;
-                    }
-
-                    if (Date.now() - held >= waitMs) {
-                        ZQ.state.spentSince = 0;
-                        ZQ.trace('spent-swap', { mode, waited: Date.now() - held, waitMs });
-                        ZQ.forceRotate('spent');
-                        return;
-                    }
-
-                    ZQ.reportSpentOnce();
-                    return;
-                }
-
-                // Report it, do not rotate. A rotation is a reload, and the reload destroys the
-                // result of the last usable detection: measured at about 1.5s after the count reached
-                // the limit, which is why that result was never seen. The address is spent rather
-                // than wrong, so the page keeps showing what it has until the user asks for another
-                // detection - that press is what rotates, because the press could not be served.
-                ZQ.reportSpentOnce();
-                return;
-            }
-
-            if (ZQ.pageState() !== 'quota') return;
-
-            ZQ.handlePageState('watchdog');
+            ZQ.onAddressSpent('watchdog');
         };
 
         // Replacing a running watchdog must not leave the previous timer behind.

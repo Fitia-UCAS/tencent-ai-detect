@@ -126,16 +126,52 @@ check('the limit is the server allowance, and the press honours the chosen mode'
 });
 
 // Measured: reaching the limit reloaded the page about 1.5s after the last usable detection landed,
-// so its result was destroyed before it could be read. The rotation now waits for the next press.
+// so its result was destroyed before it could be read. A spent address is now reported, and what
+// happens next is decided in one place from the stored preference - never by the path that noticed.
 check('the watchdog reports a spent address instead of reloading on its own', () => {
     const engine = read('src/content/engine.js');
-    const watchdog = engine.slice(engine.indexOf('ZQ.startWatchdog'));
+    const watchdog = engine.slice(engine.indexOf('ZQ.startWatchdog'), engine.indexOf('ZQ.stopWatchdog'));
 
-    assert.match(watchdog, /if \(ZQ\.identitySpent\(\)\)/,
+    assert.match(watchdog, /if \(!ZQ\.addressSpent\(\)\) return;/,
         'the watchdog still has to notice the spent address, since a click is not guaranteed');
-    assert.match(watchdog, /ZQ\.reportSpentOnce\(\)/, 'but it reports it');
-    assert.ok(!/identitySpent\(\)\)\s*\{\s*\n\s*ZQ\.rotate\(/.test(watchdog),
+    assert.match(watchdog, /ZQ\.onAddressSpent\('watchdog'\)/,
+        'and it must hand the decision to the one place that makes it');
+    assert.ok(!/ZQ\.rotate\(|location\.reload\(/.test(watchdog),
         'and must not rotate: that reload would throw the visible result away');
+});
+
+// The page saying its allowance is gone and the tab's own count reaching the limit are one question.
+// Answering it in two places is how the page came to reload while the panel was set to keep it: the
+// count was honoured, the wording was not.
+check('one predicate answers "is the address spent", and one place acts on it', () => {
+    const engine = read('src/content/engine.js');
+
+    assert.match(engine, /ZQ\.addressSpent = function addressSpent\(\) \{\s*\n\s*return ZQ\.identitySpent\(\) \|\| ZQ\.pageState\(\) === 'quota';/,
+        'both signals are asked in a single predicate');
+
+    const handler = engine.slice(
+        engine.indexOf('ZQ.handlePageState = function'),
+        engine.indexOf('ZQ.forceRotate = function'));
+    assert.match(handler, /ZQ\.onAddressSpent\(reason\)/,
+        'the page-state handler delegates instead of rotating');
+    assert.ok(!/ZQ\.rotate\(|ZQ\.forceRotate\(/.test(handler),
+        'and never starts a rotation itself');
+});
+
+// The two modes that keep the page must keep it on every path, including the observer and the
+// watchdog. Only the modes that swap may reach a rotation, and both are paced by the same cooldown.
+check('the two modes that keep the page never rotate, on any path', () => {
+    const engine = read('src/content/engine.js');
+    const decide = engine.slice(engine.indexOf('ZQ.onAddressSpent'), engine.indexOf('ZQ.WATCHDOG_MS'));
+
+    assert.match(decide, /if \(mode === 'immediate'\) \{[\s\S]*?ZQ\.forceRotate\('spent'\);/,
+        'immediate swaps at once');
+    assert.match(decide, /if \(mode === 'delay'\) \{[\s\S]*?ZQ\.forceRotate\('spent'\);/,
+        'delay swaps once the wait is over');
+    assert.equal((decide.match(/ZQ\.forceRotate\(/g) || []).length, 2,
+        'exactly the two swapping modes may rotate, so no other mode can reach one');
+    assert.match(decide, /ZQ\.reportSpentOnce\(\);\n    \};/,
+        'everything else reports the state and leaves the page alone');
 });
 
 check('the identity module is loaded before it is used', () => {

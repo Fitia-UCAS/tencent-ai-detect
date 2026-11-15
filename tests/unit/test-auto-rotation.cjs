@@ -19,10 +19,11 @@ const ALL_FILES = ['core.js', 'identity.js', 'detection.js', 'engine.js', 'index
 // Builds the content namespace over a given page text. Rotations are counted through the storage
 // record the engine writes, so no network or chrome surface is involved. Timers are tracked so the
 // interval started by index.js cannot keep the process alive after a case finishes.
-function load(bodyText, files = FILES) {
+function load(bodyText, files = FILES, options = {}) {
     const store = new Map();
     const sent = [];
     const intervals = new Set();
+    const spentMode = options.spentMode || 'manual';
 
     const sandbox = {
         // The captcha predicate asks the DOM whether a challenge is on screen. No challenge exists in
@@ -65,7 +66,22 @@ function load(bodyText, files = FILES) {
                 },
                 onMessage: { addListener() {} }
             },
-            storage: { local: { get() {}, set() {} }, onChanged: { addListener() {} } }
+            storage: {
+                local: {
+                    // index.js asks for the stored preferences on load; the answer here is what makes
+                    // the mode under test the one the script actually runs with.
+                    get(keys, callback) {
+                        if (typeof callback !== 'function') return;
+                        callback({
+                            autoRefresh: true,
+                            spentMode,
+                            spentDelaySeconds: options.spentDelaySeconds || 30
+                        });
+                    },
+                    set() {}
+                },
+                onChanged: { addListener() {} }
+            }
         },
         MutationObserver: function () { this.observe = () => {}; },
         setTimeout,
@@ -88,6 +104,10 @@ function load(bodyText, files = FILES) {
             filename: 'src/content/' + name
         });
     }
+
+    // The engine-only loads never reach the storage read that index.js performs, so the mode under
+    // test is set directly. Either way the script's own reader sees one value.
+    if (sandbox.window.__zq) sandbox.window.__zq.state.spentMode = spentMode;
 
     return {
         zq: sandbox.window.__zq,
@@ -131,9 +151,9 @@ const check = async (name, fn) => {
         assert.equal(app.sent.filter(m => m.action === 'relayHealth').length, 0);
     });
 
-    // The watchdog asks on its own, and the rotation actually starts.
+    // The watchdog asks on its own, and with a swapping mode the rotation actually starts.
     await check('the watchdog starts a rotation on a static exhausted page', async track => {
-        const app = track(load(EXHAUSTED));
+        const app = track(load(EXHAUSTED, FILES, { spentMode: 'immediate' }));
         assert.equal(typeof app.zq.startWatchdog, 'function', 'engine must expose startWatchdog');
         const stop = app.zq.startWatchdog(40);
         await wait(200);
@@ -142,6 +162,26 @@ const check = async (name, fn) => {
         assert.ok(
             app.sent.some(m => m.action === 'logReset'),
             'the rotation should have reported a reset'
+        );
+    });
+
+    // The reported symptom: the panel was set to keep the page, and the page reloaded anyway. A spent
+    // address is not a request to swap - the choice belongs to whoever set the panel.
+    await check('a page set to keep itself is never reloaded, however many paths notice', async track => {
+        const app = track(load(EXHAUSTED));
+
+        const stop = app.zq.startWatchdog(30);
+        // Every door that existed for noticing a spent address: the observer and the settle check
+        // after a press both arrive here, and the watchdog ticks on its own.
+        app.zq.handlePageState('quota');
+        app.zq.handlePageState('quota-after-click');
+
+        await wait(200);
+        stop();
+        assert.equal(app.rotations(), 0, 'the page must be left exactly as it is');
+        assert.ok(
+            app.sent.some(m => m.action === 'statusUpdate' && m.payload.status === 'identity-spent'),
+            'and the panel is told why nothing moved'
         );
     });
 
@@ -164,9 +204,9 @@ const check = async (name, fn) => {
     });
 
     // Repeated ticks must not stack rotations: the engine refuses while one is in flight, and the
-    // gap limit keeps a second one from firing immediately after.
+    // cooldown keeps a second one from firing immediately after.
     await check('repeated ticks do not stack rotations', async track => {
-        const app = track(load(EXHAUSTED));
+        const app = track(load(EXHAUSTED, FILES, { spentMode: 'immediate' }));
         const stop = app.zq.startWatchdog(20);
         await wait(300);
         stop();
@@ -186,7 +226,7 @@ const check = async (name, fn) => {
     // The wiring: index.js must start the watchdog by itself. Without this the engine could be
     // correct and still never run, which is how the gap survived a passing test suite.
     await check('index.js starts the watchdog without being asked', async track => {
-        const app = track(load(EXHAUSTED, ALL_FILES));
+        const app = track(load(EXHAUSTED, ALL_FILES, { spentMode: 'immediate' }));
         await wait(6000);
         assert.ok(app.rotations() >= 1, 'the shipped wiring should have rotated, got ' + app.rotations());
     });

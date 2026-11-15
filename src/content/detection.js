@@ -15,6 +15,7 @@
         rotations: 0,
         backoffUntil: 0,
         lastRotationAt: 0,
+        spentSince: 0,
         ip: null
     });
 
@@ -46,6 +47,9 @@
                 rotations: Number(parsed.rotations) || 0,
                 backoffUntil: Number(parsed.backoffUntil) || 0,
                 lastRotationAt: Number(parsed.lastRotationAt) || 0,
+                // When the address was first seen spent, for the 'delay' answer. It lives here so a
+                // reload cannot restart the wait.
+                spentSince: Number(parsed.spentSince) || 0,
                 ip: typeof parsed.ip === 'string' ? parsed.ip : null
             };
         } catch {
