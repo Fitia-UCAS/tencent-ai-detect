@@ -18,6 +18,7 @@
     "diag:host-exit": "node tools/diagnostics/diag-host-exit.cjs",
     "diag:ip-pool": "node tools/diagnostics/diag-ip-pool.cjs",
     "diag:load-timing": "node tools/diagnostics/diag-load-timing.cjs",
+    "diag:multitab-identity": "node tools/diagnostics/diag-multitab-identity.cjs",
     "diag:relay-race": "node tools/diagnostics/diag-relay-race.cjs",
     "diag:relay-soak": "node tools/diagnostics/diag-relay-soak.cjs",
     "diag:send-state": "node tools/diagnostics/diag-send-state.cjs",

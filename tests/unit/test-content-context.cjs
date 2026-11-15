@@ -242,10 +242,24 @@ function boot(options = {}) {
         env.setSend(() => { throw new Error(INVALIDATED); });
         env.click('立即检测');
 
-        await sleep(1500);
+        // First, the stale rotation timer must be dead. Reloading through it would only
+        // re-inject a script that reads the same state the context just lost.
+        await sleep(300);
 
-        if (env.reloads.length === 0) ok('invalidation cancels the pending reload');
-        else fail(`pending reload still fired ${env.reloads.length} time(s) after invalidation`);
+        if (env.reloads.length === 0) ok('invalidation cancels the pending rotation reload');
+        else fail(`rotation reload fired ${env.reloads.length} time(s) after invalidation`);
+
+        // What runs instead is the repair reload, which is a different thing: it is the reload
+        // that installs a fresh copy of the scripts. It is expected, but only once and only
+        // through the guard, so the marker it writes is checked rather than the count alone.
+        await sleep(1600);
+
+        const marker = env.store.get('zqContextReloadAt');
+        if (env.reloads.length === 1 && marker) {
+            ok('one guarded repair reload replaces the cancelled timer');
+        } else {
+            fail(`expected one guarded repair reload, got ${env.reloads.length} reload(s), marker ${marker || 'absent'}`);
+        }
     }
 
     // 5. The health probe succeeds, but the context dies on the next message.
