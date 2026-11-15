@@ -21,8 +21,8 @@
     "diag:multitab-identity": "node tools/diagnostics/diag-multitab-identity.cjs",
     "diag:trail": "node tools/diagnostics/read-trail.cjs",
     "diag:relay-race": "node tools/diagnostics/diag-relay-race.cjs",
-    "diag:tabids-support": "node tools/diagnostics/probe-tabids-support.cjs",
-    "diag:exhaust-reload": "node tools/diagnostics/probe-identity-exhaust-reload.cjs",
+    "diag:tabids-support": "node tools/diagnostics/diag-tabids-support.cjs",
+    "diag:exhaust-reload": "node tools/diagnostics/diag-exhaust-reload.cjs",
     "diag:relay-soak": "node tools/diagnostics/diag-relay-soak.cjs",
     "diag:send-state": "node tools/diagnostics/diag-send-state.cjs",
     "diag:session-trace": "node tools/diagnostics/diag-session-trace.cjs",
@@ -31,9 +31,9 @@
     "doctor": "node tools/doctor.cjs",
     "host:register": "node host/register-manifest.cjs",
     "pack": "node scripts/pack.cjs",
-    "probe": "node tools/diagnostics/probe-ws.mjs",
-    "probe:shim": "node tools/diagnostics/probe-shim-regression.cjs",
-    "probe:ws-headers": "node tools/diagnostics/cdp-ws-headers.cjs",
+    "diag:ws": "node tools/diagnostics/diag-ws.mjs",
+    "diag:shim-regression": "node tools/diagnostics/diag-shim-regression.cjs",
+    "diag:ws-headers": "node tools/diagnostics/diag-ws-headers.cjs",
     "relay": "node src/relay/server.cjs",
     "relay:smoke": "node tools/relay-smoke.cjs",
     "review:compare": "node tools/compare-review.cjs",
@@ -93,7 +93,7 @@
     "test:stop-relay-guard": "node tests/unit/test-stop-relay-guard.cjs",
     "test:style-consistency": "node tests/unit/test-style-consistency.cjs",
     "test:transport-recovery": "node tests/unit/test-transport-recovery.cjs",
-    "diag:exchanges": "node tools/diagnostics/pull-exchanges.cjs",
-    "diag:watch": "node tools/diagnostics/watch-detections.cjs"
+    "diag:exchanges": "node tools/diagnostics/read-exchanges.cjs",
+    "diag:watch": "node tools/diagnostics/read-detections.cjs"
   }
 }

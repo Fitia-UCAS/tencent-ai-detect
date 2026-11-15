@@ -8,7 +8,7 @@ const DEFAULT_TIMEOUT_MS = 8000;
 
 function usage() {
   return [
-    'Usage: node scripts/probe-ws.mjs [options]',
+    'Usage: node tools/diagnostics/diag-ws.mjs [options]',
     '',
     'Options:',
     '  -n, --attempts <count>  Number of probes, default 1',
