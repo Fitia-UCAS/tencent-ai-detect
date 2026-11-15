@@ -1,8 +1,9 @@
-// Proves the page refreshes itself when the allowance runs out, with no click from the user.
+// Proves what the page does when the allowance runs out, for each answer the panel offers.
 //
-// The requirement is not "it can rotate"; it is "the user does nothing". So this test never
-// presses anything: it makes the page read as exhausted and then watches for a navigation that
-// the extension has to perform on its own.
+// The answer is a stored choice, so this drives both sides of it: a page set to keep itself must stay
+// exactly where it is, and a page set to swap must swap with no click from the user. The first half
+// exists because it was broken - the setting was honoured by one of the two paths that noticed a
+// spent address and ignored by the other, so the page reloaded under a user who had asked it not to.
 //
 // Reload detection uses a marker written to the window before the wait. A reload destroys the
 // window, so the marker disappearing is proof the page navigated rather than the text being
@@ -12,6 +13,7 @@ const http = require('node:http');
 const { sleep, httpJson, cdp, launch } = require('../../tools/browser-harness.cjs');
 
 const EXT = path.resolve(__dirname, '..', '..');
+const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 
 // The relay is asked from Node, not from the page: an https page cannot fetch an http loopback
 // URL, so a probe issued inside the page fails for reasons that have nothing to do with the relay.
@@ -50,7 +52,15 @@ const fail = text => {
         browser: BROWSER,
         port: PORT,
         prefix: 'zqe2e',
-        args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`]
+        args: [
+            `--disable-extensions-except=${EXT}`,
+            `--load-extension=${EXT}`,
+            // Off-screen and muted: this run is a measurement, not something to look at, and a window
+            // that takes focus also takes it away from whoever is using the machine.
+            '--window-position=-32000,-32000',
+            '--window-size=900,700',
+            '--mute-audio'
+        ]
     });
 
     try {
@@ -58,7 +68,11 @@ const fail = text => {
         let worker = null;
         for (let i = 0; i < 40 && !worker; i += 1) {
             const targets = await httpJson(PORT, '/json/list');
-            const sw = (targets || []).find(t => t.type === 'service_worker' && (t.url || '').includes('background'));
+            // Matched by this extension's own id. The profile also runs several built-in extensions,
+            // and two of them have a service worker whose url contains "background" - picking by that
+            // word attached to one of theirs, where chrome.storage is not the extension's storage area
+            // at all, so a write there silently went nowhere.
+            const sw = (targets || []).find(t => t.type === 'service_worker' && (t.url || '').includes(EXT_ID));
             if (sw) worker = await cdp(sw.webSocketDebuggerUrl);
             else await sleep(300);
         }
@@ -99,11 +113,11 @@ const fail = text => {
         const relay = await relayHealthy();
         relay ? ok('the relay answers, so a rotation can complete') : fail('the relay is not answering');
 
-        // Make the page read the way it does when the allowance is actually gone: the control's
-        // counter wording is replaced, so no remaining-count text survives anywhere. Adding the exhausted
-        // sentence while a positive counter is still on screen is correctly treated as stale, so
-        // that is not a faithful simulation.
-        const marked = await pageConn.send('Runtime.evaluate', {
+        // The exhausting text is written once and survives the first half, because a page set to keep
+        // itself must not navigate. The counter wording is replaced rather than supplemented: adding
+        // the exhausted sentence while a positive counter is still on screen is correctly treated as
+        // stale, so that would not be a faithful simulation.
+        const markExhausted = () => pageConn.send('Runtime.evaluate', {
             expression: `(() => {
                 window.__zqProbe = 'before';
 
@@ -117,6 +131,41 @@ const fail = text => {
             returnByValue: true
         });
 
+        const stillThere = async () => {
+            const marker = await pageConn.send('Runtime.evaluate', {
+                expression: `window.__zqProbe || ''`,
+                returnByValue: true
+            }).catch(() => ({ result: { value: '' } }));
+            return (marker.result && marker.result.value) === 'before';
+        };
+
+        const setMode = mode => worker.send('Runtime.evaluate', {
+            expression: `chrome.storage.local.set({ spentMode: ${JSON.stringify(mode)} })`,
+            awaitPromise: true
+        });
+
+        // A stored preference reaches the page through the storage change listener, so it is set
+        // before the page is made to look spent - otherwise the first tick decides for the old one.
+        await setMode('manual');
+
+        // The site is a slow client: measured, its detect control is absent for the first ten seconds
+        // and the page only reaches "complete" after fifteen. Waiting a fixed nine seconds and then
+        // looking for the button is how this check came to report the state as unreproducible.
+        let buttonReady = false;
+        for (let i = 0; i < 30 && !buttonReady; i += 1) {
+            const probe = await pageConn.send('Runtime.evaluate', {
+                expression: `[...document.querySelectorAll('button')].some(b => (b.textContent || '').includes('检测'))`,
+                returnByValue: true
+            }).catch(() => ({ result: { value: false } }));
+            buttonReady = !!(probe.result && probe.result.value);
+            if (!buttonReady) await sleep(1000);
+        }
+
+        buttonReady
+            ? ok('the detection page finished starting up')
+            : fail('the detect control never appeared');
+
+        const marked = await markExhausted();
         const bodyText = marked.result && marked.result.value;
         const exhaustedNow = typeof bodyText === 'string' &&
             bodyText.includes('今日次数已用完') &&
@@ -126,22 +175,31 @@ const fail = text => {
             ? ok('the page reads exactly as it does when the allowance is gone')
             : fail('the exhausted state was not reproduced');
 
-        // The watchdog runs every five seconds and a rotation reloads 1.2s after it decides, so
-        // twenty seconds covers a full cycle without being so long that a failure looks like a hang.
+        // The watchdog ticks every two seconds, so ten of them is far past the point at which the old
+        // code had already reloaded - it decided about a second after the wording appeared.
+        let moved = false;
+        for (let i = 0; i < 10; i += 1) {
+            await sleep(1000);
+            if (!(await stillThere())) { moved = true; break; }
+        }
+
+        moved
+            ? fail('the page reloaded under "wait for me"; the setting was ignored')
+            : ok('a page set to keep itself is left exactly where it is');
+
+        // The other half of the same setting: when the swap is wanted, it has to happen without a
+        // click. The page is still reading as spent, so switching the mode is the only change.
+        await setMode('immediate');
+
         let navigated = false;
         for (let i = 0; i < 20; i += 1) {
             await sleep(1000);
-            const marker = await pageConn.send('Runtime.evaluate', {
-                expression: `window.__zqProbe || ''`,
-                returnByValue: true
-            }).catch(() => ({ result: { value: '' } }));
-
-            if ((marker.result && marker.result.value) === '') { navigated = true; break; }
+            if (!(await stillThere())) { navigated = true; break; }
         }
 
         navigated
-            ? ok('the page reloaded on its own, without any click')
-            : fail('the page never reloaded; the allowance would stay spent');
+            ? ok('with a swapping mode the page reloads on its own, without any click')
+            : fail('the page never reloaded with swapping selected; the allowance would stay spent');
 
         // After the reload the extension must come back up and pick a fresh address. The injected
         // flag lives in the content script's own world, so it is read through the newest isolated
@@ -186,7 +244,7 @@ const fail = text => {
         process.stdout.write(`\nFAIL: ${failures.length} check(s)\n`);
         process.exitCode = 1;
     } else {
-        process.stdout.write('\nPASS: the allowance refreshes itself\n');
+        process.stdout.write('\nPASS: the stored answer decides what the page does when spent\n');
     }
 })().catch(error => {
     process.stderr.write(`harness failed: ${error.message}\n`);
