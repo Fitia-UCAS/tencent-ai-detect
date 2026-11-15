@@ -17,7 +17,7 @@
 
     // The probe runs in the worker because a content-script fetch is treated as a page request and
     // blocked by CORS in MV3.
-    ZQ.relayReady = function () {
+    ZQ.relayReady = function relayReady() {
         return new Promise(resolve => {
             if (!ZQ.state.contextAlive) {
                 resolve(false);
@@ -79,7 +79,7 @@
     // this only has to cover the host starting its child.
     ZQ.RELAY_RETRY_MS = 2500;
 
-    ZQ.scheduleRetry = function (delayMs) {
+    ZQ.scheduleRetry = function scheduleRetry(delayMs) {
         if (!ZQ.state.contextAlive) return;
         if (ZQ.state.retryTimer) clearTimeout(ZQ.state.retryTimer);
 
@@ -102,7 +102,7 @@
         }, delayMs);
     };
 
-    ZQ.currentState = function (status) {
+    ZQ.currentState = function currentState(status) {
         const state = ZQ.readState();
         const quota = ZQ.readQuota();
 
@@ -121,7 +121,7 @@
         };
     };
 
-    ZQ.reportState = function (state) {
+    ZQ.reportState = function reportState(state) {
         ZQ.send({ action: 'statusUpdate', payload: state });
     };
 
@@ -206,7 +206,7 @@
 
     // Only a genuine quota hit justifies a reload. A captcha failure belongs to the user, and an
     // ambiguous refusal is reported without acting.
-    ZQ.handlePageState = function (reason) {
+    ZQ.handlePageState = function handlePageState(reason) {
         const state = ZQ.pageState();
 
         if (state === 'quota') {
@@ -233,7 +233,7 @@
     // Returns a function that stops the watchdog, so a dead context can be shut down explicitly.
     // The active stop function is also kept on the namespace, which lets callers that never saw
     // the return value (a test sandbox, an unloading page) tear the timer down.
-    ZQ.startWatchdog = function (intervalMs) {
+    ZQ.startWatchdog = function startWatchdog(intervalMs) {
         const every = intervalMs || ZQ.WATCHDOG_MS;
         let timer = null;
 
@@ -277,7 +277,7 @@
         return stop;
     };
 
-    ZQ.stopWatchdog = function () {
+    ZQ.stopWatchdog = function stopWatchdog() {
         if (typeof ZQ._stopWatchdog === 'function') ZQ._stopWatchdog();
     };
 

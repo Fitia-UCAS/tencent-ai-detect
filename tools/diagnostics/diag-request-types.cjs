@@ -173,7 +173,7 @@ function keyOf(sessionId, requestId) {
             console.log('\nrequests that reached the wire WITHOUT the address header:');
             for (const info of missing) console.log(`  [${info.type}] ${info.url.slice(0, 100)}`);
             console.log('\nIf any of these is what issues the captcha ticket, the resource type is');
-            console.log('missing from COVERED_RESOURCE_TYPES in src/background/identity.js.');
+            console.log('missing from COVERED_RESOURCE_TYPES in src/background/header-rules.js.');
         }
 
         pageConn.close();

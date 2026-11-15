@@ -404,7 +404,7 @@
 
                 this._eventHandlers[type] = next;
                 if (next) {
-                    wrapper = function(event) {
+                    wrapper = function wrapper(event) {
                         const handler = this._eventHandlers[type];
                         if (typeof handler === 'function') handler.call(this, event);
                     };

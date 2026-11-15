@@ -35,7 +35,7 @@
         '222.186', '110.184', '171.88', '125.64', '182.150', '119.147'
     ];
 
-    ZQ.randomIdentity = function () {
+    ZQ.randomIdentity = function randomIdentity() {
         const prefix = ZQ.IDENTITY_PREFIXES[Math.floor(Math.random() * ZQ.IDENTITY_PREFIXES.length)];
         const octet = () => 1 + Math.floor(Math.random() * 254);
 
@@ -46,7 +46,7 @@
     // agree. Memoized rather than read back from storage: a stored value belongs to a spent address.
     let loadIdentity = null;
 
-    ZQ.ensureIdentity = function () {
+    ZQ.ensureIdentity = function ensureIdentity() {
         if (loadIdentity) return loadIdentity;
 
         loadIdentity = ZQ.randomIdentity();
@@ -64,7 +64,7 @@
     };
 
     // How many handshakes this address has performed, as counted by the shim.
-    ZQ.identityUses = function () {
+    ZQ.identityUses = function identityUses() {
         try {
             const stored = Number(localStorage.getItem(ZQ.USE_COUNT_KEY));
             return Number.isFinite(stored) && stored > 0 ? stored : 0;
@@ -75,7 +75,7 @@
     };
 
     // The address this load picked, or null before one was chosen.
-    ZQ.currentIdentity = function () {
+    ZQ.currentIdentity = function currentIdentity() {
         if (loadIdentity) return loadIdentity;
 
         try {
@@ -94,7 +94,7 @@
     //          socket carries the synthetic one
     ZQ.state.identityConfirmed = null;
 
-    ZQ.publishIdentity = function (identity, attempt) {
+    ZQ.publishIdentity = function publishIdentity(identity, attempt) {
         if (!identity) return Promise.resolve(null);
 
         const tries = attempt || 1;

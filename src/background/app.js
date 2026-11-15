@@ -13,7 +13,7 @@ import { createRelayHealth } from './relay-health.js';
 import { createKeepAlive } from './keepalive.js';
 import { createUsageLog } from './usage-log.js';
 import { createMessageRouter } from './messages.js';
-import { createIdentityRules } from './identity.js';
+import { createHeaderRules } from './header-rules.js';
 import { registerInjection, registerMenuClick, createMenu } from './page-hooks.js';
 import { CONTENT_FILES } from '../content/files.js';
 
@@ -34,7 +34,7 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
         chrome, keys: KEYS, defaults: DEFAULTS,
         historyLimit: RESET_HISTORY_LIMIT, usageWindowMs: USAGE_WINDOW_MS, usageCap: USAGE_CAP
     });
-    const identity = createIdentityRules({ chrome, log });
+    const identity = createHeaderRules({ chrome, log });
     const route = createMessageRouter({
         chrome, keys: KEYS, keepAlive, host, health, usage, identity
     });

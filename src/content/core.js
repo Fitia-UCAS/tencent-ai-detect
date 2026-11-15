@@ -36,7 +36,7 @@
     // Reloading the extension leaves this script running in open tabs, where every chrome.* call
     // throws. There is nothing useful left to do — the page keeps working and a reload injects a
     // fresh copy — so it goes quiet instead of throwing into the page's error handler.
-    ZQ.noteContextError = function (error) {
+    ZQ.noteContextError = function noteContextError(error) {
         if (!isInvalidated(error)) return;
 
         ZQ.state.contextAlive = false;
@@ -51,7 +51,7 @@
     };
 
     // Sends a message and never throws: resolves null once the context is gone.
-    ZQ.send = function (message) {
+    ZQ.send = function send(message) {
         if (!ZQ.state.contextAlive) return Promise.resolve(null);
 
         try {

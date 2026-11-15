@@ -44,7 +44,7 @@
     // Neither quota nor captcha: an opaque refusal. Reported, never acted on.
     ZQ.AMBIGUOUS_PHRASES = ['Invalid request'];
 
-    ZQ.readState = function () {
+    ZQ.readState = function readState() {
         try {
             const raw = localStorage.getItem(ZQ.STATE_KEY);
             if (!raw) return { ...EMPTY_STATE };
@@ -64,7 +64,7 @@
         }
     };
 
-    ZQ.writeState = function (patch) {
+    ZQ.writeState = function writeState(patch) {
         const next = Object.assign(ZQ.readState(), patch);
 
         try {
@@ -79,7 +79,7 @@
 
     // With an account the allowance is tied to the uid rather than the fp, so rotating would only
     // cost a reload without changing anything.
-    ZQ.signedIn = function () {
+    ZQ.signedIn = function signedIn() {
         try {
             const token = localStorage.getItem('aiGenAccessToken');
             if (!token) return false;
@@ -93,7 +93,7 @@
 
     // Returns how many detections the page says are left, and whether it says none are.
     // `remaining` is null when the page shows no counter at all.
-    ZQ.readQuota = function (text) {
+    ZQ.readQuota = function readQuota(text) {
         const source = typeof text === 'string' ? text : (document.body ? document.body.innerText || '' : '');
         const counted = source.match(ZQ.QUOTA_REMAINING);
         const remaining = counted ? Number(counted[1]) : null;
@@ -108,7 +108,7 @@
         return { remaining, exhausted: false };
     };
 
-    ZQ.pageState = function () {
+    ZQ.pageState = function pageState() {
         const text = document.body ? (document.body.innerText || '') : '';
 
         if (ZQ.readQuota(text).exhausted) return 'quota';
@@ -131,7 +131,7 @@
     // block every reload forever and look like nothing happening. What separates a live challenge is
     // that it is inside the viewport and opaque. The template varies (drag image, pick the slowest,
     // pick the matching item); the container does not.
-    ZQ.captchaOpen = function () {
+    ZQ.captchaOpen = function captchaOpen() {
         const element = document.getElementById('tcaptcha_iframe_dy') ||
             document.getElementById('tcaptcha_iframe') ||
             document.getElementById('tcaptcha_transform') ||
@@ -164,7 +164,7 @@
 
     // Drop the fp so the page's own setFp() derives a fresh one from the browser's visitorId.
     // A hand-written random fp is refused by the server.
-    ZQ.clearFp = function () {
+    ZQ.clearFp = function clearFp() {
         try {
             for (const key of ZQ.FP_KEYS) {
                 localStorage.removeItem(key);

@@ -8,7 +8,7 @@
 //   src/content/identity.js    picks the address for this load and publishes it
 //   src/shim/index.js          appends it to the relay socket path
 //   src/relay/server.cjs       uses it instead of a random one, validating it first
-//   src/background/identity.js puts the same value on the page's own captcha request
+//   src/background/header-rules.js puts the same value on the page's own captcha request
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -21,7 +21,7 @@ const identity = read('src/content/identity.js');
 const contentIndex = read('src/content/index.js');
 const shim = read('src/shim/index.js');
 const relay = read('src/relay/server.cjs');
-const background = read('src/background/identity.js');
+const background = read('src/background/header-rules.js');
 const messages = read('src/background/messages.js');
 const files = read('src/content/files.js');
 const manifest = JSON.parse(read('manifest.json'));

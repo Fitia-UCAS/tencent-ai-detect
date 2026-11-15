@@ -149,7 +149,7 @@ function withTimeout(promise, label, timeoutMs) {
     });
 }
 
-export function createIdentityRules({ chrome, log = () => {}, opTimeoutMs = RULE_OP_TIMEOUT_MS }) {
+export function createHeaderRules({ chrome, log = () => {}, opTimeoutMs = RULE_OP_TIMEOUT_MS }) {
     // The address last confirmed to be on the live rules. Never written before that confirmation.
     let current = null;
 

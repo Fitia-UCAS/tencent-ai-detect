@@ -22,7 +22,7 @@ const { sleep, cdp, launch } = require('../../tools/browser-harness.cjs');
 
 // Lifted from the shipped module, so what runs in the page is what ships.
 const detection = fs.readFileSync(path.join(EXT, 'src', 'content', 'detection.js'), 'utf8');
-const start = detection.indexOf('ZQ.captchaOpen = function');
+const start = detection.indexOf('ZQ.captchaOpen = function captchaOpen(');
 // Ends at the closing brace; the trailing semicolon must stay out, or the expression wrapped in
 // parentheses below is a syntax error.
 const end = detection.indexOf('\n    };', start) + '\n    }'.length;

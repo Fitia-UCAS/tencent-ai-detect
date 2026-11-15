@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
-const MODULE = pathToFileURL(path.join(__dirname, '../../src/background/identity.js')).href;
+const MODULE = pathToFileURL(path.join(__dirname, '../../src/background/header-rules.js')).href;
 
 // A fake that keeps the dynamic rule list and can be told to fail, lag, or report rules that differ
 // from the ones it was given.
@@ -93,7 +93,7 @@ async function load(options) {
     const mod = await import(MODULE);
     // The production timeout is 5s; a check that waits that long is not a useful check.
     const opTimeoutMs = options && options.opTimeoutMs ? options.opTimeoutMs : 40;
-    return { fake, mod, identity: mod.createIdentityRules({ chrome: fake.chrome, opTimeoutMs }) };
+    return { fake, mod, identity: mod.createHeaderRules({ chrome: fake.chrome, opTimeoutMs }) };
 }
 
 // --- the defect this replaces -------------------------------------------------

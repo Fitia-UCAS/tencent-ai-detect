@@ -336,7 +336,7 @@ const PROPOSALS = [
     },
     {
         id: 'P1-1',
-        file: 'src/background/identity.js',
+        file: 'src/background/header-rules.js',
         topic: 'apply() reported success before updateDynamicRules finished',
         verdict: 'extended',
         claim: 'The review rated this high and then left it out of its own suggestion table. Finished here: the reply waits for getDynamicRules() to read the three rules back and check they carry the same address, updates are serialized so a slow early one cannot overwrite a later one, and sync() rebuilds state from the rules the browser actually holds after a worker restart. sync() later joined the same queue, and rule calls carry a timeout so one call that never answers cannot block the queue forever.',
@@ -376,7 +376,7 @@ const PROPOSALS = [
     },
     {
         id: 'P1-6',
-        file: 'src/background/identity.js',
+        file: 'src/background/header-rules.js',
         topic: 'the COVERED_RESOURCE_TYPES comment claimed to cover everything but main_frame',
         verdict: 'adopted',
         claim: 'Took the narrower half it suggested: the comment now says the list covers the resource types this flow uses and no longer claims to be exhaustive. webtransport and webbundle were not added, because nothing here uses those protocols and adding them would widen the blast radius for no gain.',
@@ -408,7 +408,7 @@ const PROPOSALS = [
     },
     {
         id: 'P1-9',
-        file: 'src/background/identity.js',
+        file: 'src/background/header-rules.js',
         topic: 'the three dynamic rules are global and not isolated per tab',
         verdict: 'open',
         claim: 'Agreed. The rules carry no tab condition, and two detection pages overwrite the address each other wrote. Code unchanged: this extension is used with one detection tab, and per-tab rules would need sessionRuleIds plus tab lifecycle cleanup. The limitation itself is stated in the delivery note, with what multi-tab support would require: updateSessionRules, tabIds, and tracking tab lifecycle.',
@@ -448,7 +448,7 @@ const PROPOSALS = [
     },
     {
         id: 'P1-13',
-        file: 'src/background/identity.js',
+        file: 'src/background/header-rules.js',
         topic: 'sync() and apply() were not serialized against each other',
         verdict: 'adopted',
         claim: 'The judgement holds: sync() read the rules outside the queue, so a worker restart completing after an apply would write the previous address back into current, and the next publish would skip an update that was needed. sync() now takes the same turn, and rule calls time out so one call that never answers cannot block the queue.',

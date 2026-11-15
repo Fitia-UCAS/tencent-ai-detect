@@ -32,13 +32,13 @@
     // the same order the e2e test uses so one change does not silently diverge from the other.
     const EDITOR_SELECTOR = '[contenteditable="true"], .editor, [class*="editor"]';
 
-    ZQ.readEditor = function () {
+    ZQ.readEditor = function readEditor() {
         const editor = document.querySelector(EDITOR_SELECTOR);
         return editor ? (editor.textContent || '').trim() : '';
     };
 
     // Returns the site's detect control, preferring the one that states the remaining count.
-    ZQ.detectButton = function () {
+    ZQ.detectButton = function detectButton() {
         const buttons = Array.from(document.querySelectorAll('button'));
 
         return buttons.find(button => (button.textContent || '').includes('立即检测')) ||
@@ -46,7 +46,7 @@
             null;
     };
 
-    ZQ.writeEditor = function (text) {
+    ZQ.writeEditor = function writeEditor(text) {
         const editor = document.querySelector(EDITOR_SELECTOR);
         if (!editor) return false;
 
@@ -58,7 +58,7 @@
         return true;
     };
 
-    ZQ.saveDraft = function () {
+    ZQ.saveDraft = function saveDraft() {
         // Keep the original text, including leading/trailing whitespace. readEditor() trims for
         // button gating, but a saved draft must faithfully preserve what the user entered.
         const editor = document.querySelector(EDITOR_SELECTOR);
@@ -81,7 +81,7 @@
 
     // Puts the draft back after a reload, then forgets it so a later visit does not resurrect text
     // the user already moved on from.
-    ZQ.restoreDraft = function () {
+    ZQ.restoreDraft = function restoreDraft() {
         if (draftRestoreConflict) return false;
         let text = null;
 
@@ -229,7 +229,7 @@
     }
 
     // The state recorded for the text in the editor, for the panel and for tests.
-    ZQ.attemptState = function () {
+    ZQ.attemptState = function attemptState() {
         const attempt = settleAttempt();
         const text = ZQ.readEditor();
         if (!attempt || attempt.f !== fingerprint(text)) return 'idle';
@@ -238,7 +238,7 @@
 
     // Clicks only when there is something to detect, the control is ready, and this text has not
     // already had its press.
-    ZQ.autoDetect = function () {
+    ZQ.autoDetect = function autoDetect() {
         if (!ZQ.state.enabled || !ZQ.state.autoRefresh || ZQ.state.rotating) return false;
 
         // The challenge belongs to the user. Clicking behind it would also be refused.
@@ -288,7 +288,7 @@
 
     let autoTimer = null;
 
-    ZQ.startAuto = function (intervalMs) {
+    ZQ.startAuto = function startAuto(intervalMs) {
         const stop = () => {
             if (autoTimer) clearInterval(autoTimer);
             autoTimer = null;
@@ -322,7 +322,7 @@
         return stop;
     };
 
-    ZQ.stopAuto = function () {
+    ZQ.stopAuto = function stopAuto() {
         if (autoTimer) clearInterval(autoTimer);
         autoTimer = null;
     };
