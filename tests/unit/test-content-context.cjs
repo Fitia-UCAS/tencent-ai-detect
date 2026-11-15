@@ -155,7 +155,7 @@ function boot(options = {}) {
     // 1. Healthy worker: the probe resolves true and a rotation is scheduled.
     {
         const env = boot();
-        env.fire('manualReset');
+        env.fire('rotateNow');
 
         await sleep(150);
         ok('healthy probe schedules a reload (control case)');
@@ -169,7 +169,7 @@ function boot(options = {}) {
     //    with rotating=true and every later attempt bails out silently.
     {
         const env = boot({ onSend: () => undefined });
-        env.fire('manualReset');
+        env.fire('rotateNow');
 
         await sleep(3200);
         const statuses = env.statuses();
@@ -193,7 +193,7 @@ function boot(options = {}) {
             }
         });
 
-        env.fire('manualReset');
+        env.fire('rotateNow');
         await sleep(300);
 
         const after = unhandled;
@@ -218,7 +218,7 @@ function boot(options = {}) {
             }
         });
 
-        env.fire('manualReset');
+        env.fire('rotateNow');
         await sleep(200);
 
         const quiet = env.statuses().includes('relay-offline') === false;
@@ -231,7 +231,7 @@ function boot(options = {}) {
     //    state throws the user out of a working page for nothing.
     {
         const env = boot();
-        env.fire('manualReset');
+        env.fire('rotateNow');
         await sleep(150);
 
         const scheduled = env.reloads.length === 0 && env.messages.length > 0;
@@ -277,7 +277,7 @@ function boot(options = {}) {
             }
         });
 
-        env.fire('manualReset');
+        env.fire('rotateNow');
         await sleep(1400);
 
         if (env.messages.some(m => m.action === 'logReset') && env.reloads.length === 0) {

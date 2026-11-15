@@ -182,15 +182,6 @@
                     // leaving them with a page that refuses every click.
                     ZQ.forceRotate('manual');
                     sendResponse({ status: 'success' });
-                } else if (request.action === 'manualReset') {
-                    ZQ.writeState({ failures: 0, backoffUntil: 0, lastRotationAt: 0 });
-
-                    if (ZQ.state.retryTimer) clearTimeout(ZQ.state.retryTimer);
-                    ZQ.state.retryTimer = null;
-
-                    ZQ.state.rotating = false;
-                    ZQ.rotate('manual');
-                    sendResponse({ status: 'success' });
                 }
 
                 // Every handled action answers synchronously. Unknown actions never respond, so

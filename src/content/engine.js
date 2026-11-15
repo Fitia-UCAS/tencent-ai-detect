@@ -218,7 +218,10 @@
         ZQ.send({ action: 'statusUpdate', payload: state });
     };
 
-    ZQ.rotate = async function (reason) {
+    // Rotates the address. `reason` is what the log calls it; `options.manual` marks a request from
+    // the person watching, which is the only thing that skips the minimum gap between swaps.
+    ZQ.rotate = async function (reason, options) {
+        const manual = !!(options && options.manual);
         if (!ZQ.state.enabled || ZQ.state.rotating) return;
 
         // Auto refresh is the switch for every reload this page performs, not only for the automatic
@@ -266,11 +269,16 @@
             return;
         }
 
-        const gap = Date.now() - state.lastRotationAt;
+        // The gap keeps the extension from swapping twice in quick succession on its own initiative.
+        // A person pressing the button is not that, so the gap does not apply - and it is expressed
+        // here, as intent, rather than by blanking the stamp that other decisions read.
+        if (!manual) {
+            const gap = Date.now() - state.lastRotationAt;
 
-        if (gap < ZQ.MIN_GAP_MS) {
-            ZQ.scheduleRetry(ZQ.MIN_GAP_MS - gap);
-            return;
+            if (gap < ZQ.MIN_GAP_MS) {
+                ZQ.scheduleRetry(ZQ.MIN_GAP_MS - gap);
+                return;
+            }
         }
 
         ZQ.state.rotating = true;
@@ -379,9 +387,7 @@
             return;
         }
 
-        // Clearing the stamp is what makes the cooldown below permittable.
-        ZQ.writeState({ lastRotationAt: 0 });
-        ZQ.rotate(reason || 'manual');
+        ZQ.rotate(reason || 'manual', { manual: true });
     };
 
     // What to do once this address has served all its detections.

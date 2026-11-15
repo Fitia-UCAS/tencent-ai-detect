@@ -395,13 +395,30 @@ check('auto refresh off suppresses a rotation instead of reloading', async () =>
         'the panel must be told the reload was suppressed, not that nothing happened');
 });
 
-check('auto refresh off suppresses the reset button too', async () => {
-    // The switch is the whole switch: nothing on this page reloads while it is off, including the
-    // panel's reset. Reloading there anyway would be the auto behaviour coming back through a side door.
+check('auto refresh off suppresses the rotate-now control too', async () => {
+    // The switch is the whole switch: nothing on this page reloads while it is off, including a
+    // request from the person watching. Reloading there anyway would be the auto behaviour coming
+    // back through a side door.
     const page = load({ relayOk: true, autoRefresh: false });
-    await page.ZQ.rotate('manual');
+    page.ZQ.forceRotate('manual');
 
-    assert.equal(page.reloads.length, 0, 'the reset must not reload either');
+    assert.equal(page.reloads.length, 0, 'a manual request must not reload either');
+});
+
+check('a manual request does not blank the rotation stamp', async () => {
+    // `lastRotationAt` records when the address last actually changed, and the quota cooldown reads
+    // it from storage to decide how soon another swap is allowed. Expressing "the person asked" by
+    // zeroing it defeated that cooldown for every later page load - and rotate() has early exits
+    // that never write a new stamp, so the zero could outlive the attempt that caused it.
+    const page = load({ relayOk: true, autoRefresh: true });
+    page.ZQ.forceRotate('manual');
+    await page.settle();
+
+    const blanked = page.sends
+        .filter(message => message.action === 'writeState')
+        .filter(message => message.patch && 'lastRotationAt' in message.patch);
+
+    assert.deepEqual(blanked, [], 'no manual path may write lastRotationAt');
 });
 
 check('auto refresh on rotates as before', async () => {
