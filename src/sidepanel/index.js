@@ -15,6 +15,7 @@ const LABELS = {
     'identity-spent': 'Address used up — next press rotates',
     captcha: 'Verification needed',
     ambiguous: 'Check the page',
+    'identity-unconfirmed': 'Address rule not installed — press retries',
     'signed-in': 'Signed in',
     rotated: 'Rotated',
     'relay-offline': 'Relay offline',

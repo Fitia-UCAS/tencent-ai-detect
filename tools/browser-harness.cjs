@@ -103,7 +103,7 @@ async function killProfile(profile) {
 }
 
 // Start a throwaway browser with a unique profile. Caller must call cleanup().
-async function launch({ browser, port, args = [], prefix = 'zq' }) {
+async function launch({ browser, port, args = [], prefix = 'zq', url = 'about:blank' }) {
     const profile = path.join(os.tmpdir(), `${prefix}-${port}-${Date.now()}`);
     fs.mkdirSync(profile, { recursive: true });
 
@@ -113,7 +113,7 @@ async function launch({ browser, port, args = [], prefix = 'zq' }) {
         '--no-first-run',
         '--no-default-browser-check',
         ...args,
-        'about:blank'
+        url
     ], { stdio: 'ignore', detached: false });
 
     const deadline = Date.now() + 20000;

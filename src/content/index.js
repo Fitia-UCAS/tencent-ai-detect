@@ -66,6 +66,25 @@
                 return;
             }
 
+            // And the rule that makes the ticket and the socket agree has to be in place.
+            //
+            // Only auto mode used to look at this, so a manual press went out regardless: the
+            // captcha ticket was issued for whatever address the header rule injected - the real one,
+            // if the rule was never installed - while the socket carried the synthetic one, and the
+            // server refused every single time. That refusal is what "Invalid request" is. Stopping
+            // the press and saying so is the only honest option while the two addresses disagree.
+            if (ZQ.state.identityConfirmed === false) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+
+                // A refusal is often transient - the worker restarting, rules being replaced - so the
+                // press itself is the natural moment to try publishing again.
+                ZQ.publishIdentity(ZQ.currentIdentity());
+                ZQ.reportState(ZQ.currentState('identity-unconfirmed'));
+                return;
+            }
+
             ZQ.send({ action: 'usageIncrement' });
 
             setTimeout(() => {
