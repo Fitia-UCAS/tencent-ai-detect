@@ -19,9 +19,72 @@
     const ZQ = (window.__zq = window.__zq || {});
 
     // Read back by the shim, which runs in the page's own world.
+    //
+    // Both surfaces below are per tab, and they have to be. localStorage is shared by every tab of
+    // the site, so the address one tab published overwrote what the next tab read - which is how two
+    // tabs ended up disagreeing about the address. The header rules are per tab now, so the value
+    // the socket carries has to be per tab too.
+    //
+    // Two surfaces because each covers the other's failure: an attribute on <html> is what the shim
+    // reads synchronously, and sessionStorage still holds the value if the element is replaced.
+    // localStorage is kept for the rotation log, which does have to survive a reload.
     ZQ.IDENTITY_KEY = 'zqXff';
     // Bumped by the shim on every relay socket it opens.
     ZQ.USE_COUNT_KEY = 'zqXffUses';
+    ZQ.IDENTITY_ATTR = 'data-zq-xff';
+    ZQ.USE_COUNT_ATTR = 'data-zq-xff-uses';
+
+    // Never throws: a locked-down profile can refuse sessionStorage, and documentElement is absent
+    // if document_start beats the parser.
+    function writeAttribute(attr, value) {
+        try {
+            const root = document.documentElement;
+            if (!root || !root.setAttribute) return false;
+            root.setAttribute(attr, value);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function writeSession(key, value) {
+        try {
+            sessionStorage.setItem(key, value);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function readAttribute(attr) {
+        try {
+            const root = document.documentElement;
+            return root && root.getAttribute ? root.getAttribute(attr) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function readSession(key) {
+        try {
+            return sessionStorage.getItem(key);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // The shim reads the attribute when the page opens its socket, which is later than this runs, so
+    // a missing <html> only has to be waited out. The retry is bounded: a page that never produces an
+    // element must not keep a timer alive.
+    function retryAttribute(attr, value) {
+        if (writeAttribute(attr, value)) return;
+
+        let tries = 0;
+        const timer = setInterval(() => {
+            tries += 1;
+            if (writeAttribute(attr, value) || tries >= 40) clearInterval(timer);
+        }, 25);
+    }
 
     // The reload has to happen before the fifth handshake is attempted.
     ZQ.USES_PER_IDENTITY = 4;
@@ -51,39 +114,31 @@
 
         loadIdentity = ZQ.randomIdentity();
 
-        try {
-            localStorage.setItem(ZQ.IDENTITY_KEY, loadIdentity);
-            // A new address starts with a clean handshake count.
-            localStorage.setItem(ZQ.USE_COUNT_KEY, '0');
-        } catch {
-            // Storage can be unavailable on a locked-down profile; the socket then falls back to
-            // whatever the relay picks.
-        }
+        // Per tab, on both surfaces. A page that cannot record its address would let the socket
+        // present whatever the relay picks, which is a different address from the ticket's.
+        writeSession(ZQ.IDENTITY_KEY, loadIdentity);
+        retryAttribute(ZQ.IDENTITY_ATTR, loadIdentity);
+
+        // A new address starts with a clean handshake count.
+        writeSession(ZQ.USE_COUNT_KEY, '0');
+        retryAttribute(ZQ.USE_COUNT_ATTR, '0');
 
         return loadIdentity;
     };
 
     // How many handshakes this address has performed, as counted by the shim.
     ZQ.identityUses = function identityUses() {
-        try {
-            const stored = Number(localStorage.getItem(ZQ.USE_COUNT_KEY));
-            return Number.isFinite(stored) && stored > 0 ? stored : 0;
-        } catch {
-            // Unreadable: report none, so the page is left alone rather than reloaded blindly.
-            return 0;
-        }
+        const raw = readAttribute(ZQ.USE_COUNT_ATTR) || readSession(ZQ.USE_COUNT_KEY);
+        const stored = Number(raw);
+        return Number.isFinite(stored) && stored > 0 ? stored : 0;
     };
 
     // The address this load picked, or null before one was chosen.
     ZQ.currentIdentity = function currentIdentity() {
         if (loadIdentity) return loadIdentity;
 
-        try {
-            const stored = localStorage.getItem(ZQ.IDENTITY_KEY);
-            return typeof stored === 'string' && /^\d{1,3}(\.\d{1,3}){3}$/.test(stored) ? stored : null;
-        } catch {
-            return null;
-        }
+        const stored = readAttribute(ZQ.IDENTITY_ATTR) || readSession(ZQ.IDENTITY_KEY);
+        return typeof stored === 'string' && /^\d{1,3}(\.\d{1,3}){3}$/.test(stored) ? stored : null;
     };
 
     // Whether the background confirmed that the header rule carries this load's address.

@@ -88,8 +88,10 @@ const EDGE = [
             const chosen = await pageConn.send('Runtime.evaluate', {
                 contextId: isolated.id,
                 expression: `JSON.stringify({
-                    chosen: localStorage.getItem('zqXff'),
-                    uses: localStorage.getItem('zqXffUses')
+                    chosen: (document.documentElement && document.documentElement.getAttribute('data-zq-xff'))
+                        || sessionStorage.getItem('zqXff'),
+                    uses: (document.documentElement && document.documentElement.getAttribute('data-zq-xff-uses'))
+                        || sessionStorage.getItem('zqXffUses')
                 })`,
                 returnByValue: true
             });

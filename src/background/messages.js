@@ -76,18 +76,24 @@ export function createMessageRouter({ chrome, keys, keepAlive, host, health, usa
         // The address this page load chose. The content script publishes it before sending
         // anything, so the header rule exists by the time the captcha is requested.
         //
+        // The rule is installed for the sender's tab only: the rules are per tab, so a second tab
+        // publishing its own address cannot take this one's away. A message with no sender tab is
+        // refused by the module rather than scoped to everything.
+        //
         // The reply waits for the rule to be read back, because "success" here is what the content
         // script treats as permission to let a detection go out. Answering before that check was
         // what made a failed rule installation look like a working one.
         setIdentity(request, sender, respond) {
-            identity.apply(request.ip)
+            const tabId = sender && sender.tab ? sender.tab.id : undefined;
+
+            identity.apply(request.ip, tabId)
                 .then(applied => {
                     if (!applied) {
                         respond({ status: 'ignored' });
                         return;
                     }
 
-                    chrome.storage.local.set({ [keys.identityIp]: identity.current });
+                    chrome.storage.local.set({ [keys.identityIp]: identity.currentFor(tabId) });
                     respond({ status: 'success' });
                 })
                 .catch(error => respond({

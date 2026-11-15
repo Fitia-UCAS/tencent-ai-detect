@@ -74,8 +74,15 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
 
         chrome.runtime.onMessage.addListener(route);
 
+        // A closed tab's rules would otherwise hold their slot for the rest of the browser session,
+        // and nothing else frees them: the session ruleset belongs to the browser, so it does not
+        // know which of these rules a tab that no longer exists put there.
+        if (chrome.tabs && chrome.tabs.onRemoved) {
+            chrome.tabs.onRemoved.addListener(tabId => { identity.removeTab(tabId); });
+        }
+
         // The worker restarts often; the rules it installed earlier are still there. Read them back
-        // so `current` describes the browser instead of starting out empty.
+        // so the map describes the browser instead of starting out empty.
         identity.sync();
 
         // Worker wake-up must respect the saved switch instead of re-creating the alarm blindly.

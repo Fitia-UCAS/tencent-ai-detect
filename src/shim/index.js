@@ -17,31 +17,64 @@
     // The page's identity for this load, published by src/content/identity.js. Passing it on the
     // socket path is what makes the server see the same address the captcha ticket was issued for;
     // a socket on a different address gets the ticket refused with "Invalid request".
+    //
+    // Read from per-tab surfaces only. localStorage is shared by every tab of the site, and while it
+    // was the source here, a second tab's address silently became this tab's socket address - the
+    // ticket had been issued for the first tab's own address, so the detection was refused.
     const IDENTITY_KEY = 'zqXff';
+    const IDENTITY_ATTR = 'data-zq-xff';
 
     // How many handshakes this address has already performed. An address serves a measured four, so
     // this count is what tells the content script when to move the page onto a fresh one. Counting
     // sockets is exact; counting detection clicks is not, since one load reuses a single socket.
     const USE_COUNT_KEY = 'zqXffUses';
+    const USE_COUNT_ATTR = 'data-zq-xff-uses';
+
+    function readTabValue(attr, key) {
+        try {
+            const root = window.document && window.document.documentElement;
+            const value = root && root.getAttribute ? root.getAttribute(attr) : null;
+            if (value) return value;
+        } catch (e) {
+            // Fall through to the storage copy.
+        }
+
+        try {
+            return window.sessionStorage.getItem(key);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // The counter is kept here for the life of the load and mirrored out, rather than re-read each
+    // time: the site clears sessionStorage on load, and a count that silently restarts would let the
+    // fifth handshake go out on a spent address, which no rotation can undo.
+    let uses = null;
 
     function countUse() {
+        if (uses === null) {
+            const stored = Number(readTabValue(USE_COUNT_ATTR, USE_COUNT_KEY));
+            uses = Number.isFinite(stored) && stored > 0 ? stored : 0;
+        }
+
+        uses += 1;
+
         try {
-            const current = Number(window.localStorage.getItem(USE_COUNT_KEY)) || 0;
-            window.localStorage.setItem(USE_COUNT_KEY, String(current + 1));
+            const root = window.document && window.document.documentElement;
+            if (root && root.setAttribute) root.setAttribute(USE_COUNT_ATTR, String(uses));
         } catch (e) {
-            // Storage blocked. The content script then keeps the address it has, which costs
-            // nothing.
+            // The in-memory count above is still correct for this load.
+        }
+
+        try {
+            window.sessionStorage.setItem(USE_COUNT_KEY, String(uses));
+        } catch (e) {
+            // Storage blocked. The in-memory count above is still correct for this load.
         }
     }
 
     function relayUrl() {
-        let identity = null;
-
-        try {
-            identity = window.localStorage.getItem(IDENTITY_KEY);
-        } catch (e) {
-            // Storage blocked: fall back to the relay's own choice.
-        }
+        const identity = readTabValue(IDENTITY_ATTR, IDENTITY_KEY);
 
         // Only a plain IPv4 literal is ever appended; the value travels into an upstream header.
         if (!identity || !/^\d{1,3}(\.\d{1,3}){3}$/.test(identity)) return RELAY_URL;

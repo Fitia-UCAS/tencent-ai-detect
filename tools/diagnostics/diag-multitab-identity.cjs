@@ -1,18 +1,19 @@
 // Shows whether two tabs on the detection page can disagree about the address.
 //
 // "Invalid request" is the server refusing a captcha ticket issued for one address while the socket
-// presents another. The identity is held in three places:
+// presents another. The address is held in three places:
 //
 //   * src/content/identity.js  keeps this load's choice in memory, memoized for the whole load
-//   * localStorage 'zqXff'     is per origin, so every tab of the site shares one value
-//   * the DNR rules            are extension-wide: their condition carries no tabIds
+//   * the session DNR rules    one rule set per tab, condition.tabIds naming that tab
+//   * the per-tab surfaces     a data-zq-xff attribute on <html> and sessionStorage
 //
-// The last two are global, so a second tab overwrites what the first one published. The first is
-// per load, so it does not follow. This tool measures that divergence directly: it reads tab A's
-// memoized choice, then opens tab B, then reads A's memoized choice and the live rule again.
+// The rules used to be one global set carrying whichever load published last, while the first tab
+// kept its own address in memory. That produced divergence by construction: the first tab's next
+// publish put its stale address back on the rules while the other tab's socket carried the newer
+// one. This tool measures the three directly.
 //
-// Divergence is the failure condition, not a hint: A's next publish would put its stale address back
-// on the rules while B's socket keeps the newer one, and one of the two tickets ends up refused.
+// Each tab is checked against its OWN rules, not against the newest rule set, because the rules are
+// per tab now. Divergence is the failure condition: it means one of these tabs will be refused.
 const path = require('node:path');
 const fs = require('node:fs');
 const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
@@ -38,27 +39,57 @@ async function findWorker() {
     return null;
 }
 
-async function ruleAddress(workerConn) {
+// The address this tab's rules carry, read from the ruleset the browser actually holds.
+async function ruleAddressFor(workerConn, tabId) {
     const result = await workerConn.send('Runtime.evaluate', {
-        expression: `chrome.declarativeNetRequest.getDynamicRules().then(rules => {
-            const rule = rules.find(r => r.action && r.action.requestHeaders);
-            const header = rule && rule.action.requestHeaders.find(h => h.header === 'x-forwarded-for');
-            return header ? header.value : null;
+        expression: `chrome.declarativeNetRequest.getSessionRules().then(rules => {
+            const mine = rules.filter(r => {
+                const tabIds = r.condition && r.condition.tabIds;
+                return Array.isArray(tabIds) && tabIds.length === 1 && tabIds[0] === ${tabId};
+            });
+            const values = mine
+                .map(r => ((r.action.requestHeaders || []).find(h => h.header === 'x-forwarded-for') || {}).value)
+                .filter(Boolean);
+            const unique = Array.from(new Set(values));
+            return JSON.stringify({ count: mine.length, values: unique });
         })`,
         awaitPromise: true,
         returnByValue: true
     });
-    return (result.result && result.result.value) || null;
+
+    try {
+        return JSON.parse(result.result.value);
+    } catch (e) {
+        return { count: 0, values: [], error: String(result.result && result.result.value) };
+    }
 }
 
-// Opens the site in a new tab and returns a connection plus the isolated world the content scripts
-// run in. Reading through that world is what makes the memoized choice visible: the page's own world
-// cannot see window.__zq.
-async function openTab(label) {
-    const tabs = await httpJson(PORT, '/json/new?' + SITE, 'PUT');
-    if (!tabs || !tabs.webSocketDebuggerUrl) throw new Error('could not open ' + label);
+// Opens the site in a new tab and returns its tab id, a CDP connection, and the isolated world the
+// content scripts run in. Creating it from the worker is what makes the tab id known.
+async function openTab(workerConn, usedTargets, label) {
+    const created = await workerConn.send('Runtime.evaluate', {
+        expression: `chrome.tabs.create({ url: ${JSON.stringify(SITE)}, active: false }).then(t => t.id)`,
+        awaitPromise: true,
+        returnByValue: true
+    });
 
-    const conn = await cdp(tabs.webSocketDebuggerUrl);
+    const tabId = created.result && created.result.value;
+    if (!Number.isInteger(tabId)) throw new Error('could not create ' + label);
+
+    let target = null;
+    for (let i = 0; i < 40 && !target; i += 1) {
+        const targets = await httpJson(PORT, '/json/list');
+        target = (targets || []).find(t =>
+            t.type === 'page' &&
+            (t.url || '').includes('matrix.tencent.com') &&
+            !usedTargets.has(t.id));
+        if (!target) await sleep(300);
+    }
+
+    if (!target) throw new Error('no CDP target for ' + label);
+    usedTargets.add(target.id);
+
+    const conn = await cdp(target.webSocketDebuggerUrl);
     const contexts = [];
 
     conn.on(msg => {
@@ -71,7 +102,7 @@ async function openTab(label) {
     await conn.send('Runtime.enable');
     await sleep(9000);
 
-    return { conn, contexts, label };
+    return { conn, contexts, label, tabId };
 }
 
 async function readState(tab) {
@@ -83,8 +114,10 @@ async function readState(tab) {
         expression: `JSON.stringify({
             memory: (window.__zq && typeof window.__zq.currentIdentity === 'function')
                 ? window.__zq.currentIdentity() : null,
-            stored: localStorage.getItem('zqXff'),
-            uses: localStorage.getItem('zqXffUses')
+            attr: document.documentElement ? document.documentElement.getAttribute('data-zq-xff') : null,
+            session: sessionStorage.getItem('zqXff'),
+            shared: localStorage.getItem('zqXff'),
+            uses: sessionStorage.getItem('zqXffUses')
         })`,
         returnByValue: true
     });
@@ -116,45 +149,72 @@ async function readState(tab) {
         const workerConn = await cdp(worker.webSocketDebuggerUrl);
         await workerConn.send('Runtime.enable');
 
+        const used = new Set();
+        const problems = [];
+
         console.log('--- tab A opens ---');
-        const a = await openTab('A');
+        const a = await openTab(workerConn, used, 'A');
         const a1 = await readState(a);
-        const rulesA = await ruleAddress(workerConn);
+        const ruleA1 = await ruleAddressFor(workerConn, a.tabId);
+        console.log('A tab id   :', a.tabId);
         console.log('A memory   :', a1.memory);
-        console.log('A stored   :', a1.stored, '| uses:', a1.uses);
-        console.log('rule says  :', rulesA);
+        console.log('A attr     :', a1.attr, '| session:', a1.session, '| shared:', a1.shared);
+        console.log('A rules    :', JSON.stringify(ruleA1));
 
         console.log('--- tab B opens ---');
-        const b = await openTab('B');
+        const b = await openTab(workerConn, used, 'B');
         const b1 = await readState(b);
-        const rulesB = await ruleAddress(workerConn);
+        const ruleB1 = await ruleAddressFor(workerConn, b.tabId);
+        console.log('B tab id   :', b.tabId);
         console.log('B memory   :', b1.memory);
-        console.log('B stored   :', b1.stored, '| uses:', b1.uses);
-        console.log('rule says  :', rulesB);
+        console.log('B attr     :', b1.attr, '| session:', b1.session, '| shared:', b1.shared);
+        console.log('B rules    :', JSON.stringify(ruleB1));
 
         const a2 = await readState(a);
+        const ruleA2 = await ruleAddressFor(workerConn, a.tabId);
         console.log('--- after B loaded ---');
         console.log('A memory   :', a2.memory, '(was', a1.memory + ')');
-        console.log('A stored   :', a2.stored);
+        console.log('A attr     :', a2.attr, '| session:', a2.session, '| shared:', a2.shared);
+        console.log('A rules    :', JSON.stringify(ruleA2));
 
-        const verdict = [];
-        if (a1.memory && b1.memory && a1.memory !== b1.memory) {
-            verdict.push('two tabs chose different addresses: ' + a1.memory + ' vs ' + b1.memory);
+        // Each tab must agree with its own rules. Comparing a tab against another tab's rules would
+        // be wrong now: separate rule sets are the point.
+        function agree(label, state, rule) {
+            if (state.error) {
+                problems.push(label + ': ' + state.error);
+                return;
+            }
+            if (rule.count !== 3) {
+                problems.push(label + ': expected 3 rules for its tab, found ' + rule.count);
+                return;
+            }
+            if (rule.values.length !== 1) {
+                problems.push(label + ': its rules carry more than one address: ' + rule.values.join(', '));
+                return;
+            }
+            if (state.memory && state.memory !== rule.values[0]) {
+                problems.push(label + ': memory ' + state.memory + ' but its rules say ' + rule.values[0]);
+            }
+            if (state.attr && state.attr !== rule.values[0]) {
+                problems.push(label + ': attribute ' + state.attr + ' but its rules say ' + rule.values[0]);
+            }
         }
-        if (a2.memory && rulesB && a2.memory !== rulesB) {
-            verdict.push('tab A now disagrees with the live rule: memory ' + a2.memory + ', rule ' + rulesB);
-        }
-        if (b1.memory && rulesB && b1.memory !== rulesB) {
-            verdict.push('tab B disagrees with the live rule: memory ' + b1.memory + ', rule ' + rulesB);
-        }
+
+        agree('tab A after B loaded', a2, ruleA2);
+        agree('tab B', b1, ruleB1);
 
         console.log('--- verdict ---');
-        if (verdict.length) {
-            verdict.forEach(line => console.log('  DIVERGED  ' + line));
-            console.log('One of these tabs will get "Invalid request": the ticket is issued under the');
-            console.log('rule address while the socket carries the one its own load published.');
+        if (problems.length) {
+            problems.forEach(line => console.log('  DIVERGED  ' + line));
+            console.log('A tab whose memory and rules disagree gets "Invalid request": the ticket is');
+            console.log('issued under the rule address while the socket carries the other one.');
+            process.exitCode = 1;
         } else {
-            console.log('  consistent: every tab and the live rule agree in this run');
+            console.log('  isolated: every tab agrees with its own rules');
+            console.log('  A kept ' + ruleA2.values[0] + ' while B moved to ' + ruleB1.values[0]);
+            if (a2.shared !== null) {
+                console.log('  (localStorage still shows ' + a2.shared + '; nothing reads it for the address)');
+            }
         }
 
         a.conn.close();

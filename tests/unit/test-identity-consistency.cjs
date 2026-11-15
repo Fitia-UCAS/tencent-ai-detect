@@ -53,14 +53,27 @@ check('the shim reads the same storage keys the content script writes', () => {
 
 // --- content picks one per load ------------------------------------------
 
-check('the identity is stored before it is published', () => {
-    const storeAt = identity.indexOf('localStorage.setItem(ZQ.IDENTITY_KEY, loadIdentity)');
-    const returnAt = identity.indexOf('return loadIdentity;', storeAt);
+check('the identity is stored per tab before it is published', () => {
+    const sessionAt = identity.indexOf('writeSession(ZQ.IDENTITY_KEY, loadIdentity)');
+    const attrAt = identity.indexOf('retryAttribute(ZQ.IDENTITY_ATTR, loadIdentity)');
+    const returnAt = identity.indexOf('return loadIdentity;', Math.max(sessionAt, attrAt));
     const publishAt = contentIndex.indexOf('ZQ.publishIdentity(ZQ.ensureIdentity())');
 
-    assert.ok(storeAt > 0, 'the address must reach storage for the shim');
-    assert.ok(returnAt > storeAt, 'ensureIdentity must return it');
+    assert.ok(sessionAt > 0, 'the address must reach sessionStorage for the shim');
+    assert.ok(attrAt > 0, 'and the attribute the shim reads first, which survives a storage clear');
+    assert.ok(returnAt > Math.max(sessionAt, attrAt), 'ensureIdentity must return it');
     assert.ok(publishAt > 0, 'index.js must publish it to the background');
+});
+
+check('the identity never goes through storage every tab shares', () => {
+    // localStorage is shared by every tab of the site. While the address lived there, a second tab
+    // overwrote the first tab's value while that tab kept its own address in memory - the divergence
+    // that ends in "Invalid request".
+    const block = identity.slice(
+        identity.indexOf('ZQ.ensureIdentity'), identity.indexOf('ZQ.identityUses'));
+
+    assert.ok(!/localStorage\.(get|set)Item/.test(block), 'the address must not go through localStorage');
+    assert.ok(!/(window\.)?localStorage\.(get|set)Item/.test(shim), 'and the shim must not read it from there either');
 });
 
 check('one identity is kept for the whole load', () => {
@@ -157,9 +170,20 @@ check('an unvalidated address never reaches the header rule', () => {
         'apply must refuse anything else');
 });
 
-check('the message router answers setIdentity', () => {
+check('the message router answers setIdentity for the sender tab', () => {
     assert.ok(messages.includes('setIdentity('), 'the handler must exist');
-    assert.ok(messages.includes('identity.apply(request.ip)'), 'and it must use the module');
+    assert.ok(messages.includes('identity.apply(request.ip, tabId)'), 'and it must use the module');
+    assert.match(messages, /sender\.tab\.id/, 'with the tab the message came from');
+});
+
+// A rule that is not scoped to one tab applies everywhere, which is the global behaviour these
+// rules were moved to session scope to avoid: the browser refuses tabIds on a dynamic rule with
+// "These are only supported for session-scoped rules".
+check('the header rule is scoped to the tab that published it', () => {
+    assert.ok(background.includes('updateSessionRules'), 'tabIds are only accepted in the session ruleset');
+    assert.ok(!background.includes('updateDynamicRules'), 'a dynamic rule cannot carry tabIds');
+    assert.match(background, /tabIds: \[tabId\]/, 'the condition must name the tab');
+    assert.match(background, /rulesCarryOnlyTab/, 'and the installation must verify it kept that scope');
 });
 
 check('the manifest grants what the rule needs', () => {
