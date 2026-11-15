@@ -168,5 +168,48 @@ function build({ tabUrl = 'https://matrix.tencent.com/ai-detect/', sendFails = f
     console.log('  ok    every control is guarded before binding');
 }
 
+// 8. A document without any of those elements must still run to the end.
+//
+// This is the behaviour the guards exist for, checked by running the panel against a document that
+// answers null to every lookup rather than by matching the guard in the source. A panel that throws
+// while binding stops halfway: the listeners registered before the throw stay, everything after it
+// never happens, and the panel looks blank with no clue which control was missing.
+{
+    const domReady = makeEvent();
+    let ranToEnd = false;
+
+    const context = vm.createContext({
+        chrome: {
+            sidePanel: { setPanelBehavior: () => { ranToEnd = true; return Promise.resolve(); } },
+            runtime: {},
+            storage: {
+                local: { get: (keys, cb) => cb({}), set() {} },
+                onChanged: makeEvent()
+            },
+            tabs: {
+                query: (info, cb) => cb([{ id: 1, url: 'https://matrix.tencent.com/ai-detect/' }]),
+                sendMessage() {},
+                onActivated: makeEvent(),
+                onUpdated: makeEvent()
+            }
+        },
+        document: {
+            addEventListener: (type, fn) => { if (type === 'DOMContentLoaded') domReady.addListener(fn); },
+            getElementById: () => null,
+            querySelectorAll: () => []
+        },
+        setTimeout,
+        clearTimeout,
+        console
+    });
+
+    vm.runInContext(SOURCE, context, { filename: 'src/sidepanel/index.js' });
+    domReady.dispatch();
+
+    assert.equal(ranToEnd, true,
+        'the panel must reach its last statement even when every element is missing');
+    console.log('  ok    a document with no controls does not throw');
+}
+
 console.log('');
-console.log('PASS: 7/7 swap control checks');
+console.log('PASS: 8/8 swap control checks');

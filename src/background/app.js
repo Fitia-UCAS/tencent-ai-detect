@@ -10,6 +10,7 @@ import {
 } from './constants.js';
 import { createNativeHost } from './native-host.js';
 import { createRelayHealth } from './relay-health.js';
+import { createRelayState } from './relay-state.js';
 import { createKeepAlive } from './keepalive.js';
 import { createUsageLog } from './usage-log.js';
 import { createMessageRouter } from './messages.js';
@@ -25,10 +26,11 @@ const SITE_URL = 'https://matrix.tencent.com/ai-detect/';
 
 export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) {
     const state = { port: null, online: false };
+    const relayState = createRelayState({ chrome, state });
 
-    const host = createNativeHost({ chrome, hostName: NATIVE_HOST_NAME, state, log });
+    const host = createNativeHost({ chrome, hostName: NATIVE_HOST_NAME, state, relayState, log });
     const health = createRelayHealth({
-        chrome, fetchImpl, url: RELAY_HEALTH_URL, state, timeoutMs: HEALTH_TIMEOUT_MS
+        fetchImpl, url: RELAY_HEALTH_URL, relayState, timeoutMs: HEALTH_TIMEOUT_MS
     });
     const keepAlive = createKeepAlive({ chrome, health, host, alarmName: KEEPALIVE_ALARM });
     const usage = createUsageLog({

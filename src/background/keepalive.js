@@ -32,7 +32,9 @@ export function createKeepAlive({ chrome, health, host, alarmName }) {
     async function keepAlive() {
         const body = await health.ping();
 
-        if (body && body.ok === true) {
+        // The same verdict the probe used to publish it, so a tick and the panel cannot disagree
+        // about whether the relay is up.
+        if (health.isHealthy(body)) {
             ensureFailures = 0;
 
             // A read-only GET is not a lease renewal; only the host can request an authenticated

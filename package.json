@@ -82,6 +82,7 @@
     "test:relay-pid": "node tests/unit/test-relay-pid.cjs",
     "test:relay-proxy-tunnel": "node tests/integration/test-relay-proxy-tunnel.cjs",
     "test:relay-security": "node tests/integration/test-relay-security.cjs",
+    "test:relay-state": "node tests/unit/test-relay-state.cjs",
     "test:relay-terminal-once": "node tests/integration/test-relay-terminal-once.cjs",
     "test:runner-integrity": "node tests/unit/test-test-runner-integrity.cjs",
     "test:session-trace": "node tests/unit/test-session-trace-analysis.cjs",

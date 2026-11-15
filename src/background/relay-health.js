@@ -5,18 +5,12 @@
 // than collapsing both into a boolean.
 
 export function createRelayHealth({
-    chrome,
     fetchImpl,
     url,
-    state,
+    relayState,
     timeoutMs,
     now = () => Date.now()
 }) {
-    function publish(online) {
-        state.online = online;
-        chrome.storage.local.set({ relayOnline: online });
-    }
-
     return {
         async ping() {
             const controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -29,16 +23,18 @@ export function createRelayHealth({
                     signal: controller ? controller.signal : undefined
                 });
                 const body = await response.json();
-                publish(!!(body && body.ok));
+                relayState.set(relayState.isHealthy(body));
                 return body || null;
             } catch {
-                publish(false);
+                relayState.set(false);
                 return null;
             } finally {
                 clearTimeout(timer);
             }
         },
-        isOnline: () => state.online === true,
+        isOnline: () => relayState.isOnline(),
+        // Exposed so a caller that has already pinged does not re-derive the verdict from the body.
+        isHealthy: relayState.isHealthy,
         now
     };
 }

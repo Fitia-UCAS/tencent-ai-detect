@@ -5,7 +5,7 @@
 // object is shared with the health probe: both learn whether the relay is up, and both must
 // publish that to storage so the side panel reads one value.
 
-export function createNativeHost({ chrome, hostName, state, log = () => {} }) {
+export function createNativeHost({ chrome, hostName, state, relayState, log = () => {} }) {
     // The browser reports a missing registration only as a disconnect right after connecting, so
     // the reason has to be captured here or it is lost. It is what tells the user to run the
     // registration script instead of wondering why the extension does nothing.
@@ -23,11 +23,6 @@ export function createNativeHost({ chrome, hostName, state, log = () => {} }) {
         if (!state.hostError) return;
         state.hostError = null;
         chrome.storage.local.set({ hostError: null });
-    }
-
-    function publish(online) {
-        state.online = online;
-        chrome.storage.local.set({ relayOnline: online });
     }
 
     // Opens the port and wires its listeners. Sends nothing: what a fresh port should ask for
@@ -51,7 +46,7 @@ export function createNativeHost({ chrome, hostName, state, log = () => {} }) {
             if (message && message.type === 'relay') {
                 // A message proves the host is running, which is also proof the registration works.
                 clearFailure();
-                publish(!!message.ok);
+                relayState.set(relayState.isHealthy(message));
                 log(`relay ready ok=${message.ok} reused=${message.reused}`);
             }
         });
@@ -67,7 +62,7 @@ export function createNativeHost({ chrome, hostName, state, log = () => {} }) {
             }
 
             state.port = null;
-            publish(false);
+            relayState.set(false);
         });
 
         return port;
@@ -102,7 +97,7 @@ export function createNativeHost({ chrome, hostName, state, log = () => {} }) {
             // Already gone. The state below is what matters.
         }
         state.port = null;
-        publish(false);
+        relayState.set(false);
     }
 
     // Sends a command down the existing port. A dead port means there is no host process to answer,

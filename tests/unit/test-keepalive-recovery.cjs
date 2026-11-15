@@ -54,7 +54,7 @@ function makeChrome() {
 
     const build = (host, healthy) => createKeepAlive({
         chrome: makeChrome(),
-        health: { ping: async () => (healthy ? { ok: true } : { ok: false }) },
+        health: { ping: async () => (healthy ? { ok: true } : { ok: false }), isHealthy: body => !!body && body.ok === true },
         host,
         alarmName: 'relay-keepalive'
     });
@@ -97,7 +97,7 @@ function makeChrome() {
         let healthy = false;
         const keepAlive = createKeepAlive({
             chrome: makeChrome(),
-            health: { ping: async () => ({ ok: healthy }) },
+            health: { ping: async () => ({ ok: healthy }), isHealthy: body => !!body && body.ok === true },
             host,
             alarmName: 'relay-keepalive'
         });

@@ -23,6 +23,19 @@ function makeEvent() {
 
 // A chrome surface whose connectNative either throws or returns a port that disconnects, which is
 // how the browser reports a host that is not registered.
+// The relay flag has one writer; the fake here mirrors its contract and records what it was told.
+function makeRelayState(state, writes) {
+    return {
+        set(online) {
+            state.online = online === true;
+            writes.relayOnline = state.online;
+            return state.online;
+        },
+        isHealthy: body => !!body && body.ok === true,
+        isOnline: () => state.online === true
+    };
+}
+
 function makeChrome(mode, message) {
     const writes = {};
     const port = {
@@ -72,7 +85,7 @@ const check = async (name, fn) => {
     await check('a connect that throws is recorded and published', async () => {
         const { chrome, writes } = makeChrome('throw', 'Specified native messaging host not found.');
         const state = { port: null, online: false, hostError: null };
-        const host = createNativeHost({ chrome, hostName: 'nope', state });
+        const host = createNativeHost({ chrome, hostName: 'nope', state, relayState: makeRelayState(state, writes) });
 
         assert.equal(host.ensure(), null, 'no port means no connection');
         assert.equal(state.hostError, 'Specified native messaging host not found.');
@@ -83,7 +96,7 @@ const check = async (name, fn) => {
     await check('a disconnect with lastError is recorded and published', async () => {
         const { chrome, port, writes } = makeChrome('port');
         const state = { port: null, online: false, hostError: null };
-        const host = createNativeHost({ chrome, hostName: 'host', state });
+        const host = createNativeHost({ chrome, hostName: 'host', state, relayState: makeRelayState(state, writes) });
 
         host.ensure();
         assert.equal(writes.hostError, undefined, 'nothing is wrong until the port drops');
@@ -101,7 +114,7 @@ const check = async (name, fn) => {
     await check('a relay message clears the recorded failure', async () => {
         const { chrome, port, writes } = makeChrome('port');
         const state = { port: null, online: false, hostError: null };
-        const host = createNativeHost({ chrome, hostName: 'host', state });
+        const host = createNativeHost({ chrome, hostName: 'host', state, relayState: makeRelayState(state, writes) });
 
         host.ensure();
         chrome.runtime.lastError = { message: 'not found' };
@@ -129,7 +142,7 @@ const check = async (name, fn) => {
             storage: { local: { set() { writes += 1; } } }
         };
 
-        const host = createNativeHost({ chrome: counted, hostName: 'nope', state });
+        const host = createNativeHost({ chrome: counted, hostName: 'nope', state, relayState: makeRelayState(state, {}) });
         host.ensure();
         host.ensure();
         host.ensure();
@@ -141,7 +154,9 @@ const check = async (name, fn) => {
     await check('a replaced port disconnecting does not record a failure', async () => {
         const { chrome, port } = makeChrome('port');
         const state = { port: null, online: false, hostError: null };
-        const host = createNativeHost({ chrome, hostName: 'host', state });
+        const host = createNativeHost({
+            chrome, hostName: 'host', state, relayState: makeRelayState(state, {})
+        });
 
         host.ensure();
         const replaced = state.port;
@@ -180,7 +195,9 @@ const check = async (name, fn) => {
 
         const { chrome } = makeRecordingChrome();
         const state = { port: null, online: false, hostError: null };
-        const host = createNativeHost({ chrome, hostName: 'host', state });
+        const host = createNativeHost({
+            chrome, hostName: 'host', state, relayState: makeRelayState(state, {})
+        });
 
         // A live port carries the caller's own command.
         host.ensure();
