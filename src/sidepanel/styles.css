@@ -9,9 +9,7 @@
       --ink: #14213a;
       --muted: #697386;
       --line: #e2e8f2;
-      --surface-soft: #f5f8fd;
       --white: #ffffff;
-      --shell: #ffffff;
     }
 
     * {
@@ -178,70 +176,6 @@
       padding: 0;
     }
 
-    .primary {
-      display: flex;
-      width: 100%;
-      min-height: 48px;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px 0 18px;
-      border: 0;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #0a78ff 0%, var(--brand) 72%);
-      box-shadow: 0 9px 22px rgba(8, 104, 242, 0.22);
-      color: var(--white);
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 650;
-      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
-    }
-
-    .primary:hover {
-      background: linear-gradient(135deg, #0a78ff 0%, var(--brand-hover) 72%);
-      box-shadow: 0 11px 25px rgba(8, 104, 242, 0.26);
-      transform: translateY(-1px);
-    }
-
-    .primary:active {
-      box-shadow: 0 6px 16px rgba(8, 104, 242, 0.20);
-      transform: translateY(0);
-    }
-
-    .primary svg {
-      width: 17px;
-      height: 17px;
-      fill: none;
-      stroke: currentColor;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      stroke-width: 1.8;
-    }
-
-    .utility {
-      display: flex;
-      min-height: 46px;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 8px;
-      padding: 0 5px 0 8px;
-    }
-
-    .refresh-control {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      color: var(--ink);
-      font-size: 13px;
-    }
-
-    /* Live page state. Colours come from the existing palette so the row reads as part of
-       the dock rather than as an addition bolted onto it. */
-    .state-value {
-      margin-left: auto;
-      font-weight: 600;
-      color: var(--muted);
-    }
-
     /* Sits above the controls because it explains why none of them work. */
     .host-alert {
       display: flex;
@@ -259,10 +193,6 @@
 
     .host-alert[hidden] { display: none; }
 
-    /* display:flex on these rows outranks the hidden attribute, so the attribute needs saying again
-       or a row that should be absent still appears. */
-    .utility[hidden] { display: none; }
-
     .host-alert strong { font-weight: 650; }
 
     .host-alert-detail {
@@ -279,69 +209,6 @@
       font-size: 11px;
     }
 
-    .state-value[data-state="ok"] { color: var(--brand); }
-    .state-value[data-state="quota"],
-    .state-value[data-state="captcha"] { color: #b4530a; }
-    .state-value[data-state="offline"],
-    .state-value[data-state="away"] { color: var(--muted); }
-
-    .switch {
-      position: relative;
-      width: 36px;
-      height: 20px;
-      padding: 0;
-      border: 0;
-      border-radius: 999px;
-      background: #cbd3df;
-      cursor: pointer;
-      transition: background 140ms ease;
-    }
-
-    .switch::after {
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--white);
-      box-shadow: 0 1px 4px rgba(19, 32, 55, 0.24);
-      content: "";
-      transition: transform 140ms ease;
-    }
-
-    .switch.active {
-      background: var(--brand);
-    }
-
-    .switch.active::after {
-      transform: translateX(16px);
-    }
-
-    .secondary {
-      min-height: 34px;
-      padding: 0 10px;
-      border: 0;
-      border-radius: 9px;
-      background: transparent;
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 12px;
-      transition: background 140ms ease, color 140ms ease;
-    }
-
-    .secondary:hover {
-      background: var(--surface-soft);
-      color: var(--ink);
-    }
-
-    .secondary:disabled {
-      cursor: default;
-      opacity: 0.5;
-    }
-
-    /* Matches the surrounding row: a plain control with the panel's own ink and border colours, so
-       the choice reads as part of the settings rather than as a form dropped into them. */
     /* Section heading, styled the way prompt-queue does it: small, uppercase, letter-spaced, with the
        section's own action sitting at the far end of the same row. */
     .section-label {
@@ -356,43 +223,6 @@
       font-weight: 600;
       letter-spacing: .09em;
       text-transform: uppercase;
-    }
-
-    /* The heading row's action: an icon, sized to the heading, so the row stays one line and the
-       control reads as belonging to the section rather than to the window. */
-    .icon-button {
-      display: inline-grid;
-      width: 26px;
-      height: 26px;
-      flex: 0 0 auto;
-      place-items: center;
-      border: 1px solid var(--line);
-      border-radius: 5px;
-      color: var(--muted);
-      background: var(--white);
-      cursor: pointer;
-      transition: border-color .14s ease, color .14s ease, background .14s ease;
-    }
-
-    .icon-button svg {
-      width: 14px;
-      height: 14px;
-    }
-
-    .icon-button:hover:not(:disabled) {
-      border-color: var(--brand);
-      color: var(--brand-hover);
-      background: var(--brand-soft);
-    }
-
-    .icon-button:focus-visible {
-      outline: 2px solid var(--brand);
-      outline-offset: 1px;
-    }
-
-    .icon-button:disabled {
-      cursor: default;
-      opacity: .45;
     }
 
     /* Four cards, one per answer. The shape is prompt-queue's step card: a 3px left edge that turns

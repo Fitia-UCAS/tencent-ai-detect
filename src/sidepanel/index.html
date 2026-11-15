@@ -40,20 +40,16 @@
           <code>npm run host:register</code>
         </div>
 
-        <!-- What happens once this address has served its five detections. The server caps that per
-             address, so the choice is only about when to swap addresses - and the answers cost
-             different things: waiting keeps the result readable, going now keeps a run moving. -->
         <div class="section-label">
           <span>When used up</span>
         </div>
 
-        <!-- Four answers, four cards, no frame around them. Each card is its own border, and the 3px
-             left edge turns accent when it is the chosen one.
-
-             Only the wait card opens, because it is the only one with anything to set. Expanding a
-             card that holds no setting would be an interaction that reveals nothing. -->
+        <!-- Four answers, each its own bordered card with a 3px left edge that turns accent when
+             chosen. The server allows five detections per address, so the only choice is when to
+             swap; the answers differ in what they cost - waiting keeps the result readable, going now
+             keeps a run moving. Only the wait card opens, because it is the only one with a setting. -->
         <div id="spent-modes" class="spent-modes" role="radiogroup" aria-label="What to do when the address is used up">
-          <div class="spent-card" data-mode="manual">
+          <div class="spent-card" data-mode="manual" data-selected="true">
             <div class="spent-head">
               <span class="spent-body">
                 <strong>Wait for me</strong>
