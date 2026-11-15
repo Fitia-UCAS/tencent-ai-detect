@@ -22,7 +22,7 @@
     // polling on a timer.
     function watchResults() {
         const observer = new MutationObserver(() => {
-            if (!ZQ.state.enabled || ZQ.state.rotating) return;
+            if (!ZQ.isAlive()) return;
 
             // Every mutation runs this, and the page mutates constantly while a result renders. Only
             // the transitions are worth keeping: a trail padded with a hundred identical samples
@@ -35,6 +35,10 @@
                     quota: typeof ZQ.readQuota === 'function' ? ZQ.readQuota() : null
                 });
             }
+
+            // Acting on what the page shows is the automatic path, and it only exists while this
+            // page is allowed to reload itself. Reading the state for the trail still happens above.
+            if (!ZQ.canRotate()) return;
 
             ZQ.handlePageState('quota');
         });
@@ -151,13 +155,17 @@
             ZQ.send({ action: 'usageIncrement' });
 
             setTimeout(() => {
-                if (!ZQ.state.enabled || ZQ.state.rotating) return;
+                if (!ZQ.isAlive()) return;
 
                 ZQ.trace('press-settle', {
                     state: ZQ.pageState(),
                     challengeOpen: ZQ.captchaOpen(),
                     pageAgeMs: typeof ZQ.pageAge === 'function' ? ZQ.pageAge() : null
                 }, true);
+
+                // The settle check exists to decide whether this page should act on what the press
+                // produced, which is the automatic path.
+                if (!ZQ.canRotate()) return;
 
                 ZQ.handlePageState('quota-after-click');
             }, 2500);

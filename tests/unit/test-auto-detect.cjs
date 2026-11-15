@@ -66,6 +66,11 @@ function load({ text = '', disabled = false, captcha = false, failStorageWrites 
 
     const ZQ = sandbox.__zq;
     ZQ.state = { enabled: true, autoRefresh: true, rotating: false, contextAlive: true };
+    // The action gates core.js defines, derived here from the same state the test manipulates.
+    ZQ.isAlive = () => ZQ.state.contextAlive;
+    ZQ.isEnabled = () => ZQ.isAlive() && ZQ.state.enabled;
+    ZQ.canAutoAct = () => ZQ.isEnabled() && ZQ.state.autoRefresh;
+    ZQ.canRotate = () => ZQ.canAutoAct() && !ZQ.state.rotating;
     ZQ.captchaOpen = () => captcha;
 
     // Both live in other content scripts: identity.js owns the count, engine.js owns rotate(). This

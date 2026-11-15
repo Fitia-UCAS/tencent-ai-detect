@@ -25,7 +25,7 @@
     // blocked by CORS in MV3.
     ZQ.relayReady = function relayReady() {
         return new Promise(resolve => {
-            if (!ZQ.state.contextAlive) {
+            if (!ZQ.isAlive()) {
                 resolve(false);
                 return;
             }
@@ -128,13 +128,13 @@
     };
 
     ZQ.scheduleRetry = function scheduleRetry(delayMs) {
-        if (!ZQ.state.contextAlive) return;
+        if (!ZQ.isAlive()) return;
         if (ZQ.state.retryTimer) clearTimeout(ZQ.state.retryTimer);
 
         ZQ.writeState({ backoffUntil: Date.now() + delayMs });
 
         ZQ.state.retryTimer = setTimeout(() => {
-            if (!ZQ.state.contextAlive || !ZQ.state.autoRefresh) return;
+            if (!ZQ.canAutoAct()) return;
 
             if (ZQ.captchaOpen()) {
                 ZQ.state.challengeSeenAt = Date.now();
@@ -222,13 +222,13 @@
     // the person watching, which is the only thing that skips the minimum gap between swaps.
     ZQ.rotate = async function (reason, options) {
         const manual = !!(options && options.manual);
-        if (!ZQ.state.enabled || ZQ.state.rotating) return;
+        if (!ZQ.isEnabled() || ZQ.state.rotating) return;
 
         // Auto refresh is the switch for every reload this page performs, not only for the automatic
         // detections: with it off nothing here reloads the page at all, and the reload becomes the
         // user's own decision. The state is reported so the panel says why nothing moved, instead of
         // looking as though the rotation quietly failed.
-        if (!ZQ.state.autoRefresh) {
+        if (!ZQ.canAutoAct()) {
             ZQ.reportState(ZQ.currentState('rotation-suppressed'));
             return;
         }
@@ -303,7 +303,7 @@
 
             if (ZQ.state.retryTimer) clearTimeout(ZQ.state.retryTimer);
             ZQ.state.retryTimer = setTimeout(() => {
-                if (!ZQ.state.contextAlive || !ZQ.state.autoRefresh) return;
+                if (!ZQ.canAutoAct()) return;
                 ZQ.rotate(reason);
             }, ZQ.RELAY_RETRY_MS);
 
@@ -377,7 +377,7 @@
     // quota cooldown: both exist to stop the extension acting on its own, and neither applies when
     // the request came from the person watching.
     ZQ.forceRotate = function forceRotate(reason) {
-        if (!ZQ.state.enabled) return;
+        if (!ZQ.isEnabled()) return;
 
         if (ZQ.captchaOpen()) {
             ZQ.state.challengeSeenAt = Date.now();
@@ -429,12 +429,12 @@
         const tick = () => {
             // A reloading extension leaves this script running with every chrome.* call throwing;
             // it must stop asking rather than keep scheduling reloads.
-            if (!ZQ.state.contextAlive) {
+            if (!ZQ.isAlive()) {
                 stop();
                 return;
             }
 
-            if (!ZQ.state.enabled || !ZQ.state.autoRefresh || ZQ.state.rotating) return;
+            if (!ZQ.canRotate()) return;
 
             // The address limit is checked here, not only after a click. Detecting the detect button
             // by its text is best-effort - a variant that does not use the detect wording and whose
@@ -623,8 +623,7 @@
     ZQ.state.transportRetried = false;
 
     ZQ.handleTransportFailure = async function () {
-        if (!ZQ.state.contextAlive || !ZQ.state.enabled || !ZQ.state.autoRefresh) return;
-        if (ZQ.state.rotating) return;
+        if (!ZQ.canRotate()) return;
 
         const relayUp = await ZQ.relayReady();
 

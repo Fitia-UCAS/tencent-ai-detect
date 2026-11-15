@@ -47,6 +47,17 @@
         })()
     };
 
+    // The four questions every action in this layer asks, answered here and nowhere else.
+    //
+    // Each site used to spell out its own combination of the same three flags, in nine shapes, and
+    // the shapes disagreed: the mutation observers acted on a page whose reload switch was off,
+    // because their guard predated that switch. A question asked at one place cannot disagree with
+    // itself.
+    ZQ.isAlive = () => ZQ.state.contextAlive;
+    ZQ.isEnabled = () => ZQ.isAlive() && ZQ.state.enabled;
+    ZQ.canAutoAct = () => ZQ.isEnabled() && ZQ.state.autoRefresh;
+    ZQ.canRotate = () => ZQ.canAutoAct() && !ZQ.state.rotating;
+
     // How long this document has existed, measured from its own navigation start. Distinct from
     // "since the extension started": a content script can be injected into a tab that has been open
     // for minutes, which is the case where the page is old and the script is new.
@@ -156,7 +167,7 @@
         if (!isInvalidated(error)) return;
 
         // Every later chrome.* call reports the same thing, and a repair is already under way.
-        if (!ZQ.state.contextAlive) return;
+        if (!ZQ.isAlive()) return;
 
         ZQ.state.contextAlive = false;
 
@@ -173,7 +184,7 @@
 
     // Sends a message and never throws: resolves null once the context is gone.
     ZQ.send = function send(message) {
-        if (!ZQ.state.contextAlive) return Promise.resolve(null);
+        if (!ZQ.isAlive()) return Promise.resolve(null);
 
         try {
             return Promise.resolve(chrome.runtime.sendMessage(message)).catch(error => {

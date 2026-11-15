@@ -232,7 +232,7 @@
         identityRetries += 1;
 
         setTimeout(() => {
-            if (!ZQ.state.contextAlive || ZQ.state.identityConfirmed === true) return;
+            if (!ZQ.isAlive() || ZQ.state.identityConfirmed === true) return;
             ZQ.publishIdentity(identity);
         }, ZQ.IDENTITY_RETRY_MS * identityRetries);
     }

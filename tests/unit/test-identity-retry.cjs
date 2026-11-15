@@ -21,6 +21,10 @@ function load({ responses = [] } = {}) {
 
     const ZQ = {
         state: { contextAlive: true, identityConfirmed: null },
+    isAlive: () => ZQ.state.contextAlive,
+    isEnabled: () => ZQ.isAlive(),
+    canAutoAct: () => ZQ.isEnabled(),
+    canRotate: () => ZQ.canAutoAct(),
         send: message => {
             sends.push(message);
             if (message.action !== 'setIdentity') return Promise.resolve(null);

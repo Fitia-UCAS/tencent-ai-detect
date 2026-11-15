@@ -31,6 +31,11 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false,
 
     const ZQ = {
         state: { enabled, autoRefresh, rotating, contextAlive: alive, retryTimer: null },
+        isAlive: () => ZQ.state.contextAlive,
+        isEnabled: () => ZQ.isAlive() && ZQ.state.enabled,
+        canAutoAct: () => ZQ.isEnabled() && ZQ.state.autoRefresh,
+        canRotate: () => ZQ.canAutoAct() && !ZQ.state.rotating,
+
         // Constants the real module reads.
         CAPTCHA_WAIT_MS: 2000,
         RELAY_RETRY_MS: 2500,

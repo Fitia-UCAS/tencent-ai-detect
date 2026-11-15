@@ -9,7 +9,11 @@ let observed = null;
 let onMutate = null;
 const actions = [];
 const ZQ = {
-    state: { enabled: true, rotating: false, autoRefresh: true },
+    state: { enabled: true, rotating: false, autoRefresh: true, contextAlive: true },
+    isAlive: () => ZQ.state.contextAlive,
+    isEnabled: () => ZQ.isAlive() && ZQ.state.enabled,
+    canAutoAct: () => ZQ.isEnabled() && ZQ.state.autoRefresh,
+    canRotate: () => ZQ.canAutoAct() && !ZQ.state.rotating,
     handlePageState(reason) { actions.push(reason); },
     send() {},
     noteContextError(error) { throw error; },
@@ -51,4 +55,29 @@ assert.equal(typeof onMutate, 'function');
 document.documentElement = {};
 onMutate();
 assert.deepEqual(actions, ['quota']);
-console.log('PASS: document_start before <html>, and mutations after it appears');
+
+// The observer decides whether the page may act, and that decision is the one named in core.js.
+// With the reload switch off the page is not acting on its own at all, so a mutation must not start
+// a rotation attempt - which is what reading only `enabled` here used to do, once per mutation.
+ZQ.state.autoRefresh = false;
+onMutate();
+assert.deepEqual(actions, ['quota'], 'a mutation must not act while the reload switch is off');
+
+// Nor while a swap is already in flight.
+ZQ.state.autoRefresh = true;
+ZQ.state.rotating = true;
+onMutate();
+assert.deepEqual(actions, ['quota'], 'a mutation must not act while a swap is in flight');
+
+// Switching the feature off does the same.
+ZQ.state.rotating = false;
+ZQ.state.enabled = false;
+onMutate();
+assert.deepEqual(actions, ['quota'], 'a mutation must not act while the feature is off');
+
+// And all three back on: the page acts again.
+ZQ.state.enabled = true;
+onMutate();
+assert.deepEqual(actions, ['quota', 'quota'], 'the page acts once every gate is open');
+
+console.log('PASS: document_start before <html>, mutations after it, and the action gates');

@@ -239,7 +239,7 @@
     // Clicks only when there is something to detect, the control is ready, and this text has not
     // already had its press.
     ZQ.autoDetect = function autoDetect() {
-        if (!ZQ.state.enabled || !ZQ.state.autoRefresh || ZQ.state.rotating) return false;
+        if (!ZQ.canRotate()) return false;
 
         // The challenge belongs to the user. Clicking behind it would also be refused.
         if (ZQ.captchaOpen()) {
@@ -316,12 +316,12 @@
         let restored = false;
 
         const tick = () => {
-            if (!ZQ.state.contextAlive) {
+            if (!ZQ.isAlive()) {
                 stop();
                 return;
             }
 
-            if (!ZQ.state.enabled || !ZQ.state.autoRefresh) return;
+            if (!ZQ.canAutoAct()) return;
 
             if (!restored) {
                 restored = ZQ.restoreDraft();
