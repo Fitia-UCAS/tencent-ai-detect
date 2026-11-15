@@ -6,10 +6,14 @@
 // because no callback is ever scheduled.
 
 export function createMessageRouter({ chrome, keys, keepAlive, health, usage, identity, trail }) {
+    // Every action that scopes something to a tab reads it the same way. A message with no sender tab
+    // has no tab to scope to, and the module that receives it decides what that means.
+    const tabIdOf = sender => (sender && sender.tab ? sender.tab.id : undefined);
+
     const handlers = {
         relayHealth(request, sender, respond) {
             health.ping()
-                .then(body => respond({ status: 'success', ok: !!(body && body.ok), body }))
+                .then(body => respond({ status: 'success', ok: health.isHealthy(body), body }))
                 .catch(error => respond({
                     status: 'error',
                     ok: false,
@@ -28,7 +32,7 @@ export function createMessageRouter({ chrome, keys, keepAlive, health, usage, id
             keepAlive.ensureAlarm();
             keepAlive.keepAlive()
                 .then(() => health.ping())
-                .then(body => respond({ status: 'success', ok: !!(body && body.ok) }))
+                .then(body => respond({ status: 'success', ok: health.isHealthy(body) }))
                 .catch(error => respond({ status: 'error', ok: false, message: String(error?.message || error) }));
             return true;
         },
@@ -68,7 +72,7 @@ export function createMessageRouter({ chrome, keys, keepAlive, health, usage, id
         // script treats as permission to let a detection go out. Answering before that check was
         // what made a failed rule installation look like a working one.
         setIdentity(request, sender, respond) {
-            const tabId = sender && sender.tab ? sender.tab.id : undefined;
+            const tabId = tabIdOf(sender);
 
             identity.apply(request.ip, tabId)
                 .then(applied => {
@@ -96,12 +100,11 @@ export function createMessageRouter({ chrome, keys, keepAlive, health, usage, id
         // Appends one step of this tab's load to its trail. Fire-and-forget on purpose: the page has
         // already moved on by the time this arrives, so waiting for an answer would only delay it.
         trace(request, sender, respond) {
-            const tabId = sender && sender.tab ? sender.tab.id : undefined;
             const payload = request && request.payload ? request.payload : {};
 
-            if (trail) trail.add(tabId, payload.name, payload.detail, payload.page);
+            trail.add(tabIdOf(sender), payload.name, payload.detail, payload.page);
             respond({ status: 'success' });
-            return true;
+            return false;
         }
     };
 

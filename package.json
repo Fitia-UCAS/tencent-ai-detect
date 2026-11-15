@@ -60,6 +60,7 @@
     "test:e2e:recovery": "node tests/e2e/test-recovery.cjs",
     "test:e2e:relay": "node tests/e2e/test-relay.cjs",
     "test:e2e:update": "node tests/e2e/test-update.cjs",
+    "test:frame-queue": "node tests/unit/test-frame-queue.cjs",
     "test:host-error": "node tests/unit/test-host-error.cjs",
     "test:identity-consistency": "node tests/unit/test-identity-consistency.cjs",
     "test:identity-retry": "node tests/unit/test-identity-retry.cjs",

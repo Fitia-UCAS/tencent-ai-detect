@@ -17,6 +17,7 @@ const net = require('node:net');
 const tls = require('node:tls');
 const { resolveIdleTimeout, resolveProxy, describeProxy } = require('./config.cjs');
 const { openTunnel } = require('./proxy-tunnel.cjs');
+const { createFrameQueue } = require('./frame-queue.cjs');
 
 const PORT = Number(process.env.RELAY_PORT || 9420);
 const HOST = 'matrix.tencent.com';
@@ -481,13 +482,10 @@ server.on('upgrade', (req, socket, head) => {
 
     let upstream = null;
     let closed = false;
-    const pending = [];
-    let pendingBytes = 0;
     // Labels of the frames the page has sent on this connection, in order. A
     // retry on a new address creates a brand-new upstream conversation, so this
     // list is what says whether the exchange can still be reconstructed.
     const sentFrameLabels = [];
-    let upstreamBlocked = false;
     let upstreamReady = false;
     let toUpstream = Buffer.alloc(0);
 
@@ -495,8 +493,7 @@ server.on('upgrade', (req, socket, head) => {
         if (closed) return;
         closed = true;
         activeConnections -= 1;
-        pending.length = 0;
-        pendingBytes = 0;
+        toServer.clear();
         toUpstream = Buffer.alloc(0);
         try { socket.destroy(); } catch (e) {}
         try { if (upstream) upstream.secure.destroy(); } catch (e) {}
@@ -514,8 +511,7 @@ server.on('upgrade', (req, socket, head) => {
         if (closed) return;
         closed = true;
         activeConnections -= 1;
-        pending.length = 0;
-        pendingBytes = 0;
+        toServer.clear();
         toUpstream = Buffer.alloc(0);
 
         const body = payload && payload.length ? payload : Buffer.alloc(0);
@@ -537,26 +533,19 @@ server.on('upgrade', (req, socket, head) => {
         if (typeof drain.unref === 'function') drain.unref();
     };
 
-    // A bounded queue preserves frame order if the remote stream stalls.
-    const flushUpstream = () => {
-        if (closed || !upstreamReady || !upstream || upstreamBlocked) return;
-        while (pending.length) {
-            const frame = pending.shift();
-            pendingBytes -= frame.payload.length;
-            const sink = upstream.secure;
-            if (!sink.write(encodeFrame(frame.payload, frame.opcode, true))) {
-                upstreamBlocked = true;
-                socket.pause();
-                sink.once('drain', () => {
-                    if (closed || !upstream || upstream.secure !== sink) return;
-                    upstreamBlocked = false;
-                    flushUpstream();
-                });
-                return;
-            }
-        }
-        if (!upstreamBlocked) socket.resume();
-    };
+    // Page to server. Frames the page sent are masked, as RFC 6455 requires of a client.
+    //
+    // `upstreamReady` is part of liveness because a retry replaces the socket: nothing may be written
+    // to a conversation that has not been established yet.
+    const toServer = createFrameQueue({
+        maxFrames: MAX_QUEUED_FRAMES,
+        maxBytes: MAX_QUEUED_BYTES,
+        encode: frame => encodeFrame(frame.payload, frame.opcode, true),
+        currentSink: () => (upstreamReady && upstream ? upstream.secure : null),
+        isOpen: () => !closed,
+        pauseSource: () => socket.pause(),
+        resumeSource: () => socket.resume()
+    });
 
     const pageReassembler = createReassembler();
 
@@ -578,18 +567,15 @@ server.on('upgrade', (req, socket, head) => {
                 closeGracefully(message.payload);
                 return;
             }
-            if (pending.length >= MAX_QUEUED_FRAMES ||
-                pendingBytes + message.payload.length > MAX_QUEUED_BYTES) {
-                shutdown();
-                return;
-            }
-            pending.push(message);
-            pendingBytes += message.payload.length;
             // Record what the page has already handed over, so a retry can be
             // judged on whether the upstream conversation can still be rebuilt.
             // Labels are per message, so a fragmented send counts once.
             sentFrameLabels.push(labelFramePayload(message.payload));
-            flushUpstream();
+
+            if (!toServer.push(message)) {
+                shutdown();
+                return;
+            }
         }
     };
 
@@ -629,7 +615,6 @@ server.on('upgrade', (req, socket, head) => {
             }
             upstream = conn;
             upstreamReady = true;
-            upstreamBlocked = false;
 
             if (process.env.RELAY_DEBUG) process.stderr.write(`relay start ${ip}\n`);
 
@@ -646,36 +631,24 @@ server.on('upgrade', (req, socket, head) => {
                 );
             }
 
-            flushUpstream();
+            toServer.flush();
 
-            // The reverse direction has separate per-connection buffer limits.
+            // Server to page. Frames the server sent are unmasked, as RFC 6455 requires of a server,
+            // and the same bounded queue as the other direction is used so neither can drift.
             let toPage = Buffer.alloc(0);
             let answered = false;
-            const outgoing = [];
-            let outgoingBytes = 0;
-            let pageBlocked = false;
 
-            const flushToPage = () => {
-                if (closed || pageBlocked) return;
-                while (outgoing.length) {
-                    const frame = outgoing.shift();
-                    outgoingBytes -= frame.payload.length;
-                    if (!socket.write(encodeFrame(frame.payload, frame.opcode, false))) {
-                        pageBlocked = true;
-                        conn.secure.pause();
-                        socket.once('drain', () => {
-                            if (closed) return;
-                            pageBlocked = false;
-                            flushToPage();
-                            if (!pageBlocked) conn.secure.resume();
-                        });
-                        return;
-                    }
-                }
-                if (!pageBlocked) conn.secure.resume();
-            };
+            const toPageQueue = createFrameQueue({
+                maxFrames: MAX_QUEUED_FRAMES,
+                maxBytes: MAX_QUEUED_BYTES,
+                encode: frame => encodeFrame(frame.payload, frame.opcode, false),
+                currentSink: () => socket,
+                isOpen: () => !closed,
+                pauseSource: () => conn.secure.pause(),
+                resumeSource: () => conn.secure.resume()
+            });
 
-            const pageReassemblerDown = createReassembler();
+            const upstreamReassembler = createReassembler();
 
             const deliverToPage = chunk => {
                 if (closed) return;
@@ -684,7 +657,7 @@ server.on('upgrade', (req, socket, head) => {
                     toPage = appendBounded(toPage, chunk);
                     const decoded = decodeFrames(toPage);
                     toPage = decoded.rest;
-                    messages = decoded.frames.flatMap(frame => pageReassemblerDown.push(frame));
+                    messages = decoded.frames.flatMap(frame => upstreamReassembler.push(frame));
                 } catch (_) {
                     shutdown();
                     return;
@@ -696,14 +669,10 @@ server.on('upgrade', (req, socket, head) => {
                         return;
                     }
                     answered = true;
-                    if (outgoing.length >= MAX_QUEUED_FRAMES ||
-                        outgoingBytes + message.payload.length > MAX_QUEUED_BYTES) {
+                    if (!toPageQueue.push(message)) {
                         shutdown();
                         return;
                     }
-                    outgoing.push(message);
-                    outgoingBytes += message.payload.length;
-                    flushToPage();
                 }
             };
 
@@ -739,7 +708,6 @@ server.on('upgrade', (req, socket, head) => {
                     }
                     upstream = null;
                     upstreamReady = false;
-                    upstreamBlocked = false;
                     connectAndServe();
                     return;
                 }
