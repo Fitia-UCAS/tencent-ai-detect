@@ -99,9 +99,17 @@ const DEFAULT_TIERS = new Set(['hermetic', 'process', 'local-network', 'service'
 
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
-let selected = Object.keys(pkg.scripts)
+// A script that runs this file is not one of the things this file runs. Without this the
+// `test:all` entry is classified by reading regression.cjs's own source, whose NEEDS_BROWSER
+// literal mentions `--user-data-dir` and `remote-debugging-port` - so the runner counted
+// itself as a skipped browser test and reported one more than exists.
+const isSelf = name => String(pkg.scripts[name] || '').includes(SELF);
+
+const testScripts = () => Object.keys(pkg.scripts)
     .filter(name => name.startsWith('test:'))
-    .filter(name => !String(pkg.scripts[name]).includes(SELF))
+    .filter(name => !isSelf(name));
+
+let selected = testScripts()
     .map(name => ({
         name,
         command: String(pkg.scripts[name]),
@@ -216,8 +224,7 @@ if (failed.length) {
     process.exitCode = 1;
 }
 
-const skippedBrowser = Object.keys(pkg.scripts)
-    .filter(name => name.startsWith('test:'))
+const skippedBrowser = testScripts()
     .map(name => ({ name, tier: tierOf(pkg.scripts[name]) }))
     .filter(entry => entry.tier === 'browser' && !selected.some(s => s.name === entry.name));
 

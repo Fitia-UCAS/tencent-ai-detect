@@ -37,3 +37,19 @@ assert.equal(quota.error, undefined, `quota wording test hung: ${quota.error?.me
 assert.equal(quota.status, 0, `quota wording test failed: ${quota.stderr || quota.stdout}`);
 assert.match(quota.stdout, /PASS: 14\/14 quota wording checks/);
 console.log('PASS: quota wording checks exit after reporting success');
+
+// The runner must not count itself among the tests it did not run. Its own source contains the
+// browser marker literals, so reading itself back classified `test:all` as a browser test and
+// the "not run" tally was one too high. Both the run list and that tally are built from the same
+// self-filtered selector, so listing is enough to cover it.
+//
+// The marker strings are described rather than written here: this file is classified by the same
+// source scan, so quoting them would file this suite under the browser tier.
+const runner = path.join(__dirname, '..', '..', 'tools', 'regression.cjs');
+// This suite itself runs as a regression child, and the runner refuses to re-enter from one.
+const env = { ...process.env };
+delete env.ZQ_REGRESSION_CHILD;
+const listed = spawnSync(process.execPath, [runner, '--list'], { encoding: 'utf8', timeout: 20000, env });
+assert.equal(listed.status, 0, `regression --list failed: ${listed.stderr}`);
+assert.doesNotMatch(listed.stdout, /test:all/, 'the runner must not list itself as a test');
+console.log('PASS: the runner does not count itself as a skipped browser test');
