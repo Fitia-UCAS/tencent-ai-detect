@@ -86,8 +86,15 @@
         }, 25);
     }
 
-    // The reload has to happen before the fifth handshake is attempted.
-    ZQ.USES_PER_IDENTITY = 4;
+    // The server reports 5 detections per address: the count it sends back walks 5,4,3,2,1,0 and stays
+    // at 0. Stopping at 4 threw away one of them - the fifth was still paid for and never used. The
+    // count is of handshakes this address has performed, so the limit is the number it may perform,
+    // not one less.
+    ZQ.USES_PER_IDENTITY = 5;
+
+    // Modes for what happens once the address is spent. Reported by the panel so this stays one
+    // decision rather than three code paths that each guess.
+    ZQ.SPENT_MODES = ['manual', 'press', 'delay', 'immediate'];
 
     // Same ranges the relay draws from, so a chosen address looks like a normal client.
     ZQ.IDENTITY_PREFIXES = [

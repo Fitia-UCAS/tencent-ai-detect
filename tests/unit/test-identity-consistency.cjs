@@ -111,13 +111,18 @@ check('an identity from an earlier load is NOT reused', () => {
     assert.ok(block.includes('loadIdentity = ZQ.randomIdentity()'), 'each load must pick a fresh one');
 });
 
-check('the reload happens before the fifth handshake', () => {
-    assert.match(identity, /ZQ\.USES_PER_IDENTITY = 4;/, 'the measured limit must be stated once');
+check('the limit is the server allowance, and the press honours the chosen mode', () => {
+    assert.match(identity, /ZQ\.USES_PER_IDENTITY = 5;/, 'the measured limit must be stated once');
     assert.match(identity, /ZQ\.identitySpent = function identitySpent\(\) \{[\s\S]{0,200}?USES_PER_IDENTITY/,
         'the limit must be decided from the socket count, in one place');
     assert.match(contentIndex, /if \(ZQ\.identitySpent\(\)\)/,
         'and the press must consult it rather than the refusal');
-    assert.match(contentIndex, /ZQ\.rotate\('identity-exhausted'\)/, 'and it must actually rotate');
+
+    // The press used to rotate unconditionally. Now only the 'press' mode does, because the other
+    // modes answer this moment differently and rotating regardless would override the setting.
+    assert.match(contentIndex, /if \(mode === 'press'\) ZQ\.forceRotate\('identity-exhausted'\)/,
+        'the press mode is what rotates on the unservable click');
+    assert.match(contentIndex, /ZQ\.readSpentMode\(\)/, 'decided from the stored preference');
 });
 
 // Measured: reaching the limit reloaded the page about 1.5s after the last usable detection landed,

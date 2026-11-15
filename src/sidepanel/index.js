@@ -166,11 +166,75 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(() => {});
     }
 
-    chrome.storage.local.get(['autoRefresh', 'relayEnabled', 'relayOnline'], state => {
-        renderSwitch(refreshSwitch, state.autoRefresh !== false);
-        renderSwitch(relaySwitch, state.relayEnabled !== false);
-        if (state.relayOnline === false) showState('relay-offline');
+    const spentSelect = document.getElementById('spent-mode');
+    const spentDelay = document.getElementById('spent-delay');
+    const spentDelayRow = document.getElementById('spent-delay-row');
+    const rotateButton = document.getElementById('rotate-now');
+
+    // The seconds field only applies to one of the four answers, so it is shown only for that one.
+    const renderSpentDelayRow = mode => {
+        spentDelayRow.hidden = mode !== 'delay';
+    };
+
+    chrome.storage.local.get(
+        ['autoRefresh', 'relayEnabled', 'relayOnline', 'spentMode', 'spentDelaySeconds'],
+        state => {
+            renderSwitch(refreshSwitch, state.autoRefresh !== false);
+            renderSwitch(relaySwitch, state.relayEnabled !== false);
+            spentSelect.value = state.spentMode || 'manual';
+            if (Number.isFinite(state.spentDelaySeconds)) {
+                spentDelay.value = String(state.spentDelaySeconds);
+            }
+            renderSpentDelayRow(spentSelect.value);
+            if (state.relayOnline === false) showState('relay-offline');
+        });
+
+    // The panel owns the preference; the content script reads it when the address runs out, so the
+    // decision lives in one place instead of being duplicated into each trigger.
+    spentSelect.addEventListener('change', () => {
+        const spentMode = spentSelect.value;
+        renderSpentDelayRow(spentMode);
+        chrome.storage.local.set({ spentMode }, () => {
+            showNotice(spentMode === 'manual'
+                ? 'The page will wait for you when used up'
+                : spentMode === 'press'
+                    ? 'Pressing detect on a used-up address swaps it'
+                    : spentMode === 'delay'
+                        ? 'Address swaps after the wait below'
+                        : 'Address swaps as soon as it is used up');
+        });
     });
+
+    // Changed rather than typed: committing on every keystroke would store 1, 12, 123 from someone
+    // entering 120 and act on each. The bound keeps an empty or absurd entry from being saved.
+    spentDelay.addEventListener('change', () => {
+        const seconds = Math.min(3600, Math.max(1, Math.round(Number(spentDelay.value) || 30)));
+        spentDelay.value = String(seconds);
+        chrome.storage.local.set({ spentDelaySeconds: seconds }, () => {
+            showNotice('Address will swap after ' + seconds + 's');
+        });
+    });
+
+    // Asking for another detection is the moment the address should change: the press could not be
+    // served otherwise, and waiting longer only leaves the page unusable.
+    rotateButton.addEventListener('click', () => {
+        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+            const current = tabs[0];
+            if (!current || !current.url || !current.url.includes(DETECT_HOST)) return;
+
+            rotateButton.disabled = true;
+            chrome.tabs.sendMessage(current.id, { action: 'rotateNow' }, response => {
+                // Consume lastError so a page without a content script does not leave the control
+                // looking busy forever.
+                const error = chrome.runtime.lastError;
+                rotateButton.disabled = false;
+                if (error || !response || response.status !== 'success') {
+                    showNotice('Could not swap the address');
+                }
+            });
+        });
+    });
+
 
     // The relay switch controls whether the local relay runs at all. Turning it
     // off stops the process; the page falls back to its own socket.

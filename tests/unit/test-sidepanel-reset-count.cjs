@@ -26,6 +26,8 @@ function makeElement() {
         addEventListener(type, listener) { listeners.set(type, listener); },
         setAttribute(name, value) { attributes.set(name, String(value)); },
         getAttribute(name) { return attributes.get(name) ?? null; },
+        // The panel reads a select's value when it renders the stored preference.
+        value: '',
         click() {
             const listener = listeners.get('click');
             if (listener) listener({ target: this });
@@ -37,6 +39,10 @@ const elements = new Map([
     ['toggle-refresh', makeElement()],
     ['toggle-relay', makeElement()],
     ['reset-usage', makeElement()],
+    ['spent-mode', makeElement()],
+    ['spent-delay', makeElement()],
+    ['spent-delay-row', makeElement()],
+    ['rotate-now', makeElement()],
     ['open-site', makeElement()],
     ['page-state', makeElement()],
     ['notice', makeElement()]

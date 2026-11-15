@@ -37,6 +37,9 @@ function element(id) {
         },
         attributes: {},
         disabled: false,
+        // Selects and inputs are read and written through this; a stub without it makes the panel
+        // throw the moment a preference is rendered.
+        value: '',
         setAttribute(name, value) { this.attributes[name] = value; },
         getAttribute(name) { return this.attributes[name] ?? null; },
         addEventListener(type, fn) { (this._handlers ||= {}); (this._handlers[type] ||= []).push(fn); },
@@ -53,6 +56,10 @@ function build({ tabs = [], sendMessage } = {}) {
         'toggle-refresh': element('toggle-refresh'),
         'toggle-relay': element('toggle-relay'),
         'reset-usage': element('reset-usage'),
+        'spent-mode': element('spent-mode'),
+        'spent-delay': element('spent-delay'),
+        'spent-delay-row': element('spent-delay-row'),
+        'rotate-now': element('rotate-now'),
         'open-site': element('open-site'),
         'page-state': element('page-state'),
         notice: element('notice')

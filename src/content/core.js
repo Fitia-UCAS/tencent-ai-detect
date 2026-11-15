@@ -24,6 +24,10 @@
     ZQ.state = {
         enabled: true,
         autoRefresh: true,
+        // 'manual' | 'press' | 'delay' | 'immediate'. The panel owns this; see ZQ.readSpentMode.
+        spentMode: 'manual',
+        // Only used by 'delay'. Seconds, because that is what the panel shows.
+        spentDelaySeconds: 30,
         rotating: false,
         retryTimer: null,
         contextAlive: true,

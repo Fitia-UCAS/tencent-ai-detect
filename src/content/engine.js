@@ -364,8 +364,47 @@
         }
     };
 
-    // The watchdog asks on a timer, so a page that is already exhausted and sitting still still
-    // rotates without needing a DOM change or a click.
+    // A rotation the user asked for. It still refuses inside a challenge, because reloading there
+    // would discard the work being solved, but it does not respect the spent-address hold or the
+    // quota cooldown: both exist to stop the extension acting on its own, and neither applies when
+    // the request came from the person watching.
+    ZQ.forceRotate = function forceRotate(reason) {
+        if (!ZQ.state.enabled) return;
+
+        if (ZQ.captchaOpen()) {
+            ZQ.state.challengeSeenAt = Date.now();
+            ZQ.state.challengeWasOpen = true;
+            ZQ.trace('rotate-deferred', { reason: 'challenge-open', requested: true });
+            ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
+            return;
+        }
+
+        // Clearing the stamp is what makes the cooldown below permittable.
+        ZQ.writeState({ lastRotationAt: 0 });
+        ZQ.rotate(reason || 'manual');
+    };
+
+    // What to do once this address has served all its detections.
+    //
+    // The server allows five per address and then reports zero, so the address has to change; the only
+    // question is when. The three answers cost different things and none is right for every use, which
+    // is why this is a stored preference rather than a constant.
+    ZQ.readSpentMode = function readSpentMode() {
+        const mode = ZQ.state.spentMode;
+        return ZQ.SPENT_MODES.indexOf(mode) !== -1 ? mode : 'manual';
+    };
+
+    // How long to wait before swapping on the 'delay' setting, in ms. The panel stores seconds.
+    ZQ.readSpentDelayMs = function readSpentDelayMs() {
+        const seconds = Number(ZQ.state.spentDelaySeconds);
+        return (Number.isFinite(seconds) && seconds > 0 ? seconds : 30) * 1000;
+    };
+
+    // The default, kept so the delay setting has a value before the panel has stored one.
+    ZQ.SPENT_DELAY_MS = 30000;
+
+    // The watchdog asks on a timer, so a page that is exhausted and sitting still is noticed without
+    // needing a DOM change or a click.
     ZQ.WATCHDOG_MS = 2000;
 
     // Returns a function that stops the watchdog, so a dead context can be shut down explicitly.
@@ -396,6 +435,40 @@
             // class neither "detect" nor "check" leaves the count rising with nothing watching it.
             // Reading the stored count makes the trigger exact no matter how the detection started.
             if (ZQ.identitySpent()) {
+                // The address has served its five detections, so it cannot serve another. What
+                // happens next is the user's choice, because the three answers trade off different
+                // things: waiting keeps the last result on screen, swapping now keeps a run moving.
+                const mode = ZQ.readSpentMode();
+
+                if (mode === 'immediate') {
+                    ZQ.trace('spent-swap', { mode, uses: ZQ.identityUses() });
+                    ZQ.forceRotate('spent');
+                    return;
+                }
+
+                if (mode === 'delay') {
+                    // The wait starts when the address is first seen spent, and is measured against a
+                    // stored stamp so a reload cannot restart it. The length is the user's setting.
+                    const held = ZQ.state.spentSince || 0;
+                    const waitMs = ZQ.readSpentDelayMs();
+
+                    if (!held) {
+                        ZQ.state.spentSince = Date.now();
+                        ZQ.reportSpentOnce();
+                        return;
+                    }
+
+                    if (Date.now() - held >= waitMs) {
+                        ZQ.state.spentSince = 0;
+                        ZQ.trace('spent-swap', { mode, waited: Date.now() - held, waitMs });
+                        ZQ.forceRotate('spent');
+                        return;
+                    }
+
+                    ZQ.reportSpentOnce();
+                    return;
+                }
+
                 // Report it, do not rotate. A rotation is a reload, and the reload destroys the
                 // result of the last usable detection: measured at about 1.5s after the count reached
                 // the limit, which is why that result was never seen. The address is spent rather

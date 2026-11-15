@@ -73,18 +73,26 @@
             if (!text.includes('检测') && !text.includes('立即检测') &&
                 !className.includes('detect') && !className.includes('check')) return;
 
-            // Measured: an address serves four handshakes and is refused from the fifth onwards,
-            // permanently. The fifth is the press this address cannot serve, so it is stopped here
-            // rather than sent and refused: the spent address has to be swapped first, and that swap
-            // is a reload.
+            // Measured: the server reports five detections per address and then zero, so a sixth press
+            // on the same address is refused permanently. The spent address has to be swapped first,
+            // and that swap is a reload - so what happens to this press is the user's setting.
             if (ZQ.identitySpent()) {
-                event.preventDefault();
-                event.stopPropagation();
-                event.stopImmediatePropagation();
+                const mode = ZQ.readSpentMode();
 
-                ZQ.trace('press-blocked', { reason: 'identity-exhausted', uses: ZQ.identityUses() });
-                ZQ.rotate('identity-exhausted');
-                return;
+                // 'press' means exactly this moment: the click that cannot be served is the request
+                // for a new address. 'manual' leaves it to the panel button. Both stop the press.
+                if (mode !== 'immediate') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+
+                    ZQ.trace('press-blocked', { reason: 'identity-exhausted', uses: ZQ.identityUses(), mode });
+
+                    if (mode === 'press') ZQ.forceRotate('identity-exhausted');
+                    else ZQ.reportSpentOnce();
+
+                    return;
+                }
             }
 
             // And the rule that makes the ticket and the socket agree has to be in place.
@@ -168,6 +176,12 @@
                 } else if (request.action === 'autoRefresh') {
                     ZQ.state.autoRefresh = request.enabled;
                     sendResponse({ status: 'success' });
+                } else if (request.action === 'rotateNow') {
+                    // A press that cannot be served is the one case where swapping the address is
+                    // what the user asked for, so this bypasses the spent-address hold rather than
+                    // leaving them with a page that refuses every click.
+                    ZQ.forceRotate('manual');
+                    sendResponse({ status: 'success' });
                 } else if (request.action === 'manualReset') {
                     ZQ.writeState({ failures: 0, backoffUntil: 0, lastRotationAt: 0 });
 
@@ -192,12 +206,31 @@
     // the UI while this script kept reloading anyway.
     function readSettings() {
         try {
-            chrome.storage.local.get(['autoRefresh'], stored => {
+            chrome.storage.local.get(['autoRefresh', 'spentMode', 'spentDelaySeconds'], stored => {
                 ZQ.state.autoRefresh = stored.autoRefresh !== false;
+                ZQ.state.spentMode = stored.spentMode || 'manual';
+
+                // Kept as seconds; the engine converts. Storing the raw value means a later change to
+                // the default does not silently move a number the user chose.
+                const seconds = Number(stored.spentDelaySeconds);
+                ZQ.state.spentDelaySeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 30;
             });
 
             chrome.storage.onChanged.addListener((changes, area) => {
-                if (area !== 'local' || !changes.autoRefresh) return;
+                if (area !== 'local') return;
+
+                // The spent-mode choice takes effect without a reload: the panel is where it is set,
+                // and a setting that only applies to the next page would look broken.
+                if (changes.spentMode) {
+                    ZQ.state.spentMode = changes.spentMode.newValue || 'manual';
+                }
+
+                if (changes.spentDelaySeconds) {
+                    const seconds = Number(changes.spentDelaySeconds.newValue);
+                    ZQ.state.spentDelaySeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 30;
+                }
+
+                if (!changes.autoRefresh) return;
 
                 ZQ.state.autoRefresh = changes.autoRefresh.newValue !== false;
 

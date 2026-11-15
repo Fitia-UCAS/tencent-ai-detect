@@ -57,6 +57,33 @@
           </div>
           <button id="reset-usage" class="secondary" type="button">Reset count</button>
         </div>
+
+        <!-- What happens once this address has served its five detections. The server caps that per
+             address, so the choice is only about when to swap addresses - and the answers cost
+             different things: waiting keeps the result readable, going now keeps a run moving. -->
+        <div class="utility">
+          <div class="refresh-control">
+            <span>When used up</span>
+            <select id="spent-mode" class="spent-mode" aria-label="What to do when the address is used up">
+              <option value="manual">Wait for me</option>
+              <option value="press">Swap when I press detect</option>
+              <option value="delay">Wait, then swap</option>
+              <option value="immediate">Swap now</option>
+            </select>
+          </div>
+          <button id="rotate-now" class="secondary" type="button" disabled>Swap address</button>
+        </div>
+
+        <!-- Only meaningful on "Wait, then swap". Hidden otherwise so the panel does not present a
+             number that has no effect. -->
+        <div class="utility" id="spent-delay-row" hidden>
+          <div class="refresh-control">
+            <span>Wait before swap</span>
+            <input id="spent-delay" class="spent-delay" type="number" min="1" max="3600" step="1" value="30"
+                   aria-label="Seconds to wait before swapping the address">
+            <span class="unit">s</span>
+          </div>
+        </div>
       </section>
     </div>
 
