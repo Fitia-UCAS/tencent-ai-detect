@@ -9,6 +9,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+// What this checks is the Windows registration path end to end: the HKCU key, the manifest it names,
+// the launcher inside that manifest and the batch file that launcher runs. None of that exists on
+// Linux or macOS, where the browser reads a manifest from a directory instead, so there is nothing
+// here to fail - and reporting a failure would say the chain is broken when only the platform differs.
+if (process.platform !== 'win32') {
+    console.log(`SKIP: native host registration is Windows-specific (this is ${process.platform})`);
+    process.exit(0);
+}
+
 const REG_PATH = 'HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.afei.tencent_ai_detect_relay';
 
 const checks = [];
