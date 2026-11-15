@@ -42,6 +42,122 @@ const RELATIVE_PATTERNS = [
     'scripts[\\\\/]relay\\.cjs'
 ];
 
+// --- Linux ---------------------------------------------------------------------------------------
+//
+// The same attribution as the Windows path below, read from /proc instead of CIM. It exists because
+// the test that depends on it - listener is a child of the host that started it - is a real assertion
+// about process ownership, and skipping it wherever the platform differs means the release workflow
+// checks less than a developer's machine does.
+//
+// /proc is used rather than `ss` or `lsof` because neither is guaranteed present; the kernel table is.
+
+// Parses one of /proc/net/tcp or /proc/net/tcp6 and returns the inode of every socket listening on
+// `port`. Lines are `sl local_address rem_address st ...`, addresses as HEXIP:HEXPORT, and st 0A is
+// LISTEN. The inode is the ninth field.
+function listeningInodes(port, readFile) {
+    const hexPort = port.toString(16).toUpperCase().padStart(4, '0');
+    const inodes = [];
+
+    for (const table of ['/proc/net/tcp', '/proc/net/tcp6']) {
+        let raw;
+        try {
+            raw = String(readFile(table, 'utf8'));
+        } catch (_) {
+            continue;
+        }
+
+        for (const line of raw.split('\n').slice(1)) {
+            const fields = line.trim().split(/\s+/);
+            if (fields.length < 10) continue;
+
+            const local = fields[1];
+            if (!local || !local.endsWith(':' + hexPort)) continue;
+            if (fields[3] !== '0A') continue;
+
+            // An inode of 0 means the kernel has not assigned one, so it cannot be matched to a
+            // process; treating it as a match would attribute the port to the wrong pid.
+            if (fields[9] && fields[9] !== '0') inodes.push(fields[9]);
+        }
+    }
+
+    return inodes;
+}
+
+// Whether this process was started from one of the relay scripts. /proc/<pid>/cmdline is
+// NUL-separated, and the paths are compared with forward slashes because that is what a launch on
+// Linux records.
+function startedFromScript(pid, scriptPaths, readFile) {
+    let raw;
+    try {
+        raw = String(readFile('/proc/' + pid + '/cmdline', 'utf8'));
+    } catch (_) {
+        return false;
+    }
+
+    const command = raw.split('\0').join(' ');
+
+    for (const script of scriptPaths) {
+        if (command.includes(script.split(path.sep).join('/'))) return true;
+        if (command.includes(script)) return true;
+    }
+
+    for (const pattern of RELATIVE_PATTERNS) {
+        if (new RegExp(pattern).test(command)) return true;
+    }
+
+    return false;
+}
+
+function linuxPidForPort(port, options) {
+    const readFile = options.readFileSync ?? fs.readFileSync;
+    const readdir = options.readdirSync ?? fs.readdirSync;
+    const readlink = options.readlinkSync ?? fs.readlinkSync;
+
+    const scriptPaths = options.scriptPath
+        ? [options.scriptPath]
+        : (options.scriptPaths ?? existingScripts());
+    if (!scriptPaths.length) return null;
+
+    const inodes = listeningInodes(port, readFile);
+    if (!inodes.length) return null;
+
+    const found = new Set();
+
+    for (const name of readdir('/proc')) {
+        if (!/^\d+$/.test(name)) continue;
+
+        let fds;
+        try {
+            fds = readdir('/proc/' + name + '/fd');
+        } catch (_) {
+            // Another user's process, or one that exited between the listing and this read.
+            continue;
+        }
+
+        for (const fd of fds) {
+            let target;
+            try {
+                target = String(readlink('/proc/' + name + '/fd/' + fd));
+            } catch (_) {
+                continue;
+            }
+
+            const match = /^socket:\[(\d+)\]$/.exec(target);
+            if (!match || !inodes.includes(match[1])) continue;
+
+            if (startedFromScript(name, scriptPaths, readFile)) found.add(Number(name));
+            break;
+        }
+    }
+
+    // Anything other than a single answer is reported as unattributed: two processes in one port's
+    // socket table means this cannot say which one owns it.
+    if (found.size !== 1) return null;
+
+    const pid = [...found][0];
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+}
+
 function relayPidForPort(port, options = {}) {
     const platform = options.platform ?? process.platform;
     const run = options.spawnSync ?? spawnSync;
@@ -49,9 +165,11 @@ function relayPidForPort(port, options = {}) {
         ? [options.scriptPath]
         : (options.scriptPaths ?? existingScripts());
 
-    if (platform !== 'win32') return null;
     if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
     if (!scriptPaths.length) return null;
+
+    if (platform === 'linux') return linuxPidForPort(port, { ...options, scriptPaths });
+    if (platform !== 'win32') return null;
 
     // PowerShell single-quoted literals escape only single quotes. The script paths come from our
     // current checkout, never from a network response.
