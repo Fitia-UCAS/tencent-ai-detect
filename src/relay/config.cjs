@@ -146,15 +146,11 @@ function resolveProxy(env = process.env, runtimes = {}) {
     const fromEnvironment = proxyFromEnvironment(env);
     if (fromEnvironment) return fromEnvironment;
 
-    try {
-        if (process.platform === 'win32') {
-            return readWindowsProxy(runtimes.regQuery || queryWindowsProxy);
-        }
-        if (process.platform === 'darwin') {
-            return readMacProxy(runtimes.scutil || queryMacProxy);
-        }
-    } catch (error) {
-        return null;
+    if (process.platform === 'win32') {
+        return readWindowsProxy(runtimes.regQuery || queryWindowsProxy);
+    }
+    if (process.platform === 'darwin') {
+        return readMacProxy(runtimes.scutil || queryMacProxy);
     }
     return null;
 }
