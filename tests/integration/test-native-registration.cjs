@@ -36,7 +36,7 @@ let launcher = null;
 
 check('the host is registered for this user', () => {
     const target = registeredPath();
-    assert.ok(target, 'no registration found - run host/register-edge.bat');
+    assert.ok(target, 'no registration found - run host/register-edge.cjs');
     return target;
 });
 
@@ -98,7 +98,7 @@ const failed = checks.filter(ok => !ok).length;
 console.log('');
 if (failed) {
     console.error(`${failed}/${checks.length} native host checks failed`);
-    console.error('Fix: run host/register-edge.bat, then reload the extension.');
+    console.error('Fix: run host/register-edge.cjs, then reload the extension.');
     process.exitCode = 1;
 } else {
     console.log(`PASS: ${checks.length}/${checks.length} native host checks`);

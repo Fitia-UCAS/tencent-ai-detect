@@ -1105,28 +1105,28 @@
       "$ref": "#"
     },
     "eslintConfig": {
-      "$ref": "eslintrc.json"
+      "$ref": "https://www.schemastore.org/eslintrc.json"
     },
     "prettier": {
       "$ref": "https://www.schemastore.org/prettierrc.json"
     },
     "stylelint": {
-      "$ref": "stylelintrc.json"
+      "$ref": "https://www.schemastore.org/stylelintrc.json"
     },
     "ava": {
-      "$ref": "ava.json"
+      "$ref": "https://www.schemastore.org/ava.json"
     },
     "release": {
-      "$ref": "semantic-release.json"
+      "$ref": "https://www.schemastore.org/semantic-release.json"
     },
     "jscpd": {
-      "$ref": "jscpd.json"
+      "$ref": "https://www.schemastore.org/jscpd.json"
     },
     "madge": {
-      "$ref": "madge.json"
+      "$ref": "https://www.schemastore.org/madge.json"
     },
     "nodemonConfig": {
-      "$ref": "nodemon.json"
+      "$ref": "https://www.schemastore.org/nodemon.json"
     },
     "quikrun": {
       "$ref": "https://www.schemastore.org/quikrun.json"
