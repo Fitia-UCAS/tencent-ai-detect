@@ -338,9 +338,4 @@
 
         return stop;
     };
-
-    ZQ.stopAuto = function stopAuto() {
-        if (autoTimer) clearInterval(autoTimer);
-        autoTimer = null;
-    };
 })();

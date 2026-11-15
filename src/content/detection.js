@@ -13,19 +13,10 @@
     const ZQ = (window.__zq = window.__zq || {});
     const EMPTY_STATE = Object.freeze({
         rotations: 0,
-        failures: 0,
         backoffUntil: 0,
         lastRotationAt: 0,
-        ip: null,
-        transport: null
+        ip: null
     });
-
-    ZQ.QUOTA_PHRASES = [
-        '今日免费次数已用完',
-        '已达到今日免费检测次数',
-        '今日剩余次数：0',
-        '今日剩余次数:0'
-    ];
 
     // The site's counter is part of the detect button - "detect (5 left today)" in its own wording - and
     // the wording changes as the count falls, ending in an exhausted form. An enumerated list can
@@ -53,11 +44,9 @@
 
             return {
                 rotations: Number(parsed.rotations) || 0,
-                failures: Number(parsed.failures) || 0,
                 backoffUntil: Number(parsed.backoffUntil) || 0,
                 lastRotationAt: Number(parsed.lastRotationAt) || 0,
-                ip: typeof parsed.ip === 'string' ? parsed.ip : null,
-                transport: typeof parsed.transport === 'string' ? parsed.transport : null
+                ip: typeof parsed.ip === 'string' ? parsed.ip : null
             };
         } catch {
             return { ...EMPTY_STATE };

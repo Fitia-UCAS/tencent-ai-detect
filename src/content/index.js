@@ -54,11 +54,10 @@
 
     // Usage is counted from clicks on the site's own detect controls.
     //
-    // The listener is registered in the capture phase, and that is what makes the spent check work.
-    // It used to run in the bubble phase and only look at the count 2500ms later, by which time the
-    // page had already opened the fifth socket on a spent address and the server had refused it -
-    // the "Invalid request" the user saw. Capturing means the press is stopped before the page's own
-    // handler runs, so the refused handshake is never sent at all.
+    // The listener is registered in the capture phase, and that is what makes the spent check work:
+    // the press is stopped before the page's own handler runs, so a refused handshake is never sent
+    // at all. Sampling the count afterwards would let the page open the fifth socket on a spent
+    // address first, which the server answers with "Invalid request".
     function monitorUsage() {
         document.addEventListener('click', event => {
             const target = event.target;
@@ -99,13 +98,13 @@
                 }
             }
 
-            // And the rule that makes the ticket and the socket agree has to be in place.
+            // And the rule that makes the ticket and the socket agree has to be in place before any
+            // press, auto or manual.
             //
-            // Only auto mode used to look at this, so a manual press went out regardless: the
-            // captcha ticket was issued for whatever address the header rule injected - the real one,
-            // if the rule was never installed - while the socket carried the synthetic one, and the
-            // server refused every single time. That refusal is what "Invalid request" is. Stopping
-            // the press and saying so is the only honest option while the two addresses disagree.
+            // Without it the captcha ticket is issued for whatever address the header rule injected -
+            // the real one - while the socket carries the synthetic one, and the server refuses every
+            // single time. That refusal is what "Invalid request" is. Stopping the press and saying so
+            // is the only honest option while the two addresses disagree.
             if (ZQ.state.identityConfirmed === false) {
                 event.preventDefault();
                 event.stopPropagation();

@@ -49,10 +49,9 @@
 
     // The four questions every action in this layer asks, answered here and nowhere else.
     //
-    // Each site used to spell out its own combination of the same three flags, in nine shapes, and
-    // the shapes disagreed: the mutation observers acted on a page whose reload switch was off,
-    // because their guard predated that switch. A question asked at one place cannot disagree with
-    // itself.
+    // Each answer is derived from the same three flags, so a decision taken at one place cannot
+    // disagree with the same decision taken at another. Spelling the combinations out per site is
+    // what let the mutation observers act on a page whose reload switch was off.
     ZQ.isAlive = () => ZQ.state.contextAlive;
     ZQ.isEnabled = () => ZQ.isAlive() && ZQ.state.enabled;
     ZQ.canAutoAct = () => ZQ.isEnabled() && ZQ.state.autoRefresh;

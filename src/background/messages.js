@@ -102,32 +102,6 @@ export function createMessageRouter({ chrome, keys, keepAlive, health, usage, id
             if (trail) trail.add(tabId, payload.name, payload.detail, payload.page);
             respond({ status: 'success' });
             return true;
-        },
-
-        // Reads the trail back, so a failure can be explained from what happened rather than guessed.
-        readTrail(request, sender, respond) {
-            if (!trail) {
-                respond({ status: 'error', message: 'no trail' });
-                return true;
-            }
-
-            const tabId = request && Number.isInteger(request.tabId)
-                ? request.tabId
-                : (sender && sender.tab ? sender.tab.id : undefined);
-
-            trail.read(tabId).then(run => respond({ status: 'success', run }));
-            return true;
-        },
-
-        clearTrail(request, sender, respond) {
-            if (!trail) {
-                respond({ status: 'error', message: 'no trail' });
-                return true;
-            }
-
-            trail.clear(request && Number.isInteger(request.tabId) ? request.tabId : undefined)
-                .then(() => respond({ status: 'success' }));
-            return true;
         }
     };
 

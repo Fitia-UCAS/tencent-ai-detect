@@ -7,12 +7,12 @@
 // Every address the page names is validated first: the value is written into a request header, and
 // a newline in it would let a caller inject arbitrary headers.
 //
-// The rules are per tab, and that is not cosmetic. They used to be one global set carrying whichever
-// load published last, which meant a second tab to the same site silently took the rules away from
-// the first: the first tab's page kept its own address in memory, so its next publish put that stale
-// address back on the rules while the other tab's socket carried the newer one, and one of the two
-// tickets was refused. Measured: tab A held 47.96.186.107 while the rules and localStorage had
-// already moved to 39.156.142.131.
+// The rules are per tab, and that is not cosmetic. A single global set carries whichever load
+// published last, so a second tab to the same site takes the rules away from the first: the first
+// tab's page keeps its own address in memory, its next publish puts that stale address back on the
+// rules while the other tab's socket carries the newer one, and one of the two tickets is refused.
+// Measured: tab A held 47.96.186.107 while the rules and localStorage had already moved to
+// 39.156.142.131.
 //
 // Per-tab conditions are only accepted in the session ruleset - a dynamic rule that names tabIds is
 // rejected with "These are only supported for session-scoped rules", measured against Edge. Session
@@ -70,10 +70,10 @@ export function slotFromRuleIds(ids) {
 // Builds the rules for one tab. One rule per domain keeps the conditions simple and the blast
 // radius visible.
 //
-// Covers the resource types the detection, its captcha and its socket actually use. The narrow
-// list this used to carry (xmlhttprequest, websocket, sub_frame, other) silently skipped the
-// captcha SDK's own script and image loads, so those requests left on the real address while the
-// socket carried the synthetic one - and a ticket issued to one address is refused on the other.
+// Covers the resource types the detection, its captcha and its socket actually use. A narrow list
+// (xmlhttprequest, websocket, sub_frame, other) silently skips the captcha SDK's own script and image
+// loads, so those requests leave on the real address while the socket carries the synthetic one - and
+// a ticket issued to one address is refused on the other.
 //
 // main_frame is left out on purpose: rewriting the header of the document itself is a much wider
 // change than the detection needs. webtransport and webbundle are also absent - they are Chromium

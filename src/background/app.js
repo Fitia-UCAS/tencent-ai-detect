@@ -46,12 +46,11 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
 
     // The relay always runs.
     //
-    // It used to be a switch, kept because it was unclear when turning it off might help. It never
-    // helped: the detection socket is rerouted to the relay by URL alone, so stopping the process does
-    // not fall back to a direct connection - it fails closed, and the page stops detecting with no
-    // sign of why. The relay is also the only thing that puts a synthetic address on the socket, and
-    // without that the ticket's address and the socket's disagree, which the server refuses every
-    // time. There is no working configuration with it off, so there is nothing to switch.
+    // There is no switch, because there is no working configuration with it off: the detection socket
+    // is rerouted to the relay by URL alone, so stopping the process does not fall back to a direct
+    // connection - it fails closed and the page stops detecting with no sign of why. The relay is
+    // also the only thing that puts a synthetic address on the socket, and without that the ticket's
+    // address and the socket's disagree, which the server refuses every time.
     function startRelay() {
         keepAlive.ensureAlarm();
         host.ensure();

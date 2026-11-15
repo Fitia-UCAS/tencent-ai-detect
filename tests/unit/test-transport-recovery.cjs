@@ -44,7 +44,7 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false,
         WATCHDOG_MS: 2000,
         captchaOpen: () => false,
         signedIn: () => false,
-        readState: () => ({ rotations: 0, failures: 0, backoffUntil: 0, lastRotationAt: 0, ip: null, transport: null }),
+        readState: () => ({ rotations: 0, backoffUntil: 0, lastRotationAt: 0, ip: null }),
         writeState: patch => sends.push({ action: 'writeState', patch }),
         // engine.js installs its own currentState/reportState; those are observed through the
         // statusUpdate messages they send, so both stay as seams here.

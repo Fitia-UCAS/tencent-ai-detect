@@ -211,10 +211,8 @@
             at: Date.now(),
             status: status || 'idle',
             rotations: state.rotations,
-            failures: state.failures,
             cooldownUntil: state.backoffUntil,
             ip: state.ip,
-            transport: state.transport || null,
             signedIn: ZQ.signedIn(),
             // What the page says is left, so the panel can show the number instead of only
             // "ready" and leave the user to open the page and look.
@@ -324,10 +322,8 @@
 
         ZQ.writeState({
             rotations: state.rotations + 1,
-            failures: 0,
             lastRotationAt: Date.now(),
-            ip: 'relay',
-            transport: 'relay'
+            ip: 'relay'
         });
 
         // A rotation is a fresh start: the challenge cycle belongs to the load being replaced, and
@@ -413,9 +409,6 @@
         const seconds = Number(ZQ.state.spentDelaySeconds);
         return (Number.isFinite(seconds) && seconds > 0 ? seconds : 30) * 1000;
     };
-
-    // The default, kept so the delay setting has a value before the panel has stored one.
-    ZQ.SPENT_DELAY_MS = 30000;
 
     // The watchdog asks on a timer, so a page that is exhausted and sitting still is noticed without
     // needing a DOM change or a click.
