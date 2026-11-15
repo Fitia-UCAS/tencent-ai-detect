@@ -103,9 +103,48 @@
         if (remaining !== null && remaining > 0) return { remaining, exhausted: false };
 
         if (remaining === 0) return { remaining: 0, exhausted: true };
-        if (ZQ.QUOTA_EXHAUSTED.test(source)) return { remaining, exhausted: true };
+
+        // No counter, so the wording has to be read in the context it belongs to.
+        //
+        // The counter normally sits inside the detect button, and it disappears while a detection
+        // runs - the button is replaced by its progress state. In that window an exhausted phrase
+        // left in the document from an earlier refusal is the only thing left to match, which marked
+        // a page with four detections remaining as exhausted and rotated it: the reload that appeared
+        // to happen for no reason, always mid-detect.
+        //
+        // So with no counter, the phrase only counts when it is the button's own label. A page whose
+        // allowance is genuinely gone keeps that wording on the button, which is the case the site
+        // actually renders and the one the tests below pin.
+        if (ZQ.QUOTA_EXHAUSTED.test(source)) {
+            return { remaining, exhausted: ZQ.exhaustedOnButton() };
+        }
 
         return { remaining, exhausted: false };
+    };
+
+    // Whether the exhausted wording is the detect button's own label rather than a leftover elsewhere.
+    //
+    // Returns true when it cannot tell: no DOM to inspect, or no button found. A page whose allowance
+    // is gone has to keep rotating, so the unsure answer has to be the permissive one - the cost of a
+    // needless reload is a reload, and the cost of never rotating is a page that stops working.
+    ZQ.exhaustedOnButton = function exhaustedOnButton() {
+        try {
+            if (typeof ZQ.detectButton === 'function') {
+                const button = ZQ.detectButton();
+                if (!button) return true;
+
+                const label = String(button.textContent || '');
+                if (ZQ.QUOTA_EXHAUSTED.test(label)) return true;
+
+                // The button says nothing about exhaustion but carries no counter either - that is the
+                // mid-detect state, where the label is a progress word. Not the page's exhausted case.
+                return !ZQ.QUOTA_REMAINING.test(label);
+            }
+        } catch (e) {
+            // Fall through to the permissive answer.
+        }
+
+        return true;
     };
 
     ZQ.pageState = function pageState() {
