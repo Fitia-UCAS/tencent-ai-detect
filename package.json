@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "description": "Browser extension for Tencent AI Detect",
+  "license": "MIT",
   "scripts": {
     "clean:processes": "node tools/clean-processes.cjs",
     "deliver": "node scripts/deliver.cjs",
