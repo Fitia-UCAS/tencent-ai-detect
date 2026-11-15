@@ -15,7 +15,8 @@ const crypto = require('node:crypto');
 const http = require('node:http');
 const net = require('node:net');
 const tls = require('node:tls');
-const { resolveIdleTimeout } = require('./config.cjs');
+const { resolveIdleTimeout, resolveProxy, describeProxy } = require('./config.cjs');
+const { openTunnel } = require('./proxy-tunnel.cjs');
 
 const PORT = Number(process.env.RELAY_PORT || 9420);
 const HOST = 'matrix.tencent.com';
@@ -252,6 +253,31 @@ function createReassembler(limit = MAX_MESSAGE_BYTES) {
 
 // --- upstream connection ---------------------------------------------------
 
+// The outbound path, resolved once at startup from the system proxy switch. See resolveProxy() in
+// config.cjs for why the relay has to follow it.
+const PROXY = resolveProxy();
+
+// Dials the upstream: straight to the host, or through the proxy's CONNECT tunnel when one is on.
+function dialUpstream() {
+    if (PROXY) return openTunnel(PROXY, `${HOST}:443`);
+
+    return new Promise((resolve, reject) => {
+        const socket = net.connect(443, HOST);
+        let settled = false;
+        socket.once('connect', () => {
+            settled = true;
+            resolve(socket);
+        });
+        // `on`, not `once`: the socket keeps reporting after the promise settles, and an error with no
+        // listener ends the process. The first report decides; later ones are absorbed.
+        socket.on('error', error => {
+            if (settled) return;
+            settled = true;
+            reject(error);
+        });
+    });
+}
+
 // Opens the real classification socket with a synthetic client address.
 // Every stage has its own timeout: a stalled connect, a stalled TLS handshake or
 // a server that never answers the Upgrade would otherwise leave the page stuck
@@ -264,6 +290,7 @@ function openUpstream(ip) {
     return new Promise((resolve, reject) => {
         let settled = false;
         let timer = null;
+        let socket = null;
 
         const finish = (fn, value) => {
             if (settled) return;
@@ -276,21 +303,28 @@ function openUpstream(ip) {
             if (timer) clearTimeout(timer);
             timer = setTimeout(() => {
                 finish(reject, new Error(message));
-                try { socket.destroy(); } catch (e) {}
+                try { if (socket) socket.destroy(); } catch (e) {}
             }, ms);
         };
 
-        const socket = net.connect(443, HOST);
         const key = crypto.randomBytes(16).toString('base64');
 
         arm(CONNECT_TIMEOUT_MS, `connect timeout to ${HOST}`);
 
-        socket.once('error', error => finish(reject, error));
-        socket.once('close', () => {
-            if (!settled) finish(reject, new Error('socket closed before upgrade'));
-        });
+        dialUpstream().then(dialed => {
+            if (settled) {
+                dialed.destroy();
+                return;
+            }
+            socket = dialed;
 
-        socket.once('connect', () => {
+            // `on`, not `once`, for the same reason as inside dialUpstream: a second error report on a
+            // spent listener would end the process with nothing to answer it.
+            socket.on('error', error => finish(reject, error));
+            socket.on('close', () => {
+                if (!settled) finish(reject, new Error('socket closed before upgrade'));
+            });
+
             arm(UPGRADE_TIMEOUT_MS, `upgrade timeout from ${HOST}`);
 
             // Diagnostic only: RELAY_NO_SPOOF=1 sends the connection without a
@@ -316,44 +350,38 @@ function openUpstream(ip) {
                 );
             });
 
-            secure.once('error', error => finish(reject, error));
+            // Only the guarded listener: a bare second one would call reject after the promise has
+            // already settled, which does nothing and hides which failure was the real one.
+            secure.on('error', error => finish(reject, error));
 
             let raw = Buffer.alloc(0);
-            let upgraded = false;
 
             const onData = chunk => {
                 raw = Buffer.concat([raw, chunk]);
 
-                if (!upgraded) {
-                    const idx = raw.indexOf('\r\n\r\n');
-                    if (idx === -1) return;
+                const idx = raw.indexOf('\r\n\r\n');
+                if (idx === -1) return;
 
-                    const head = raw.slice(0, idx).toString();
-                    raw = raw.slice(idx + 4);
+                const head = raw.slice(0, idx).toString();
+                raw = raw.slice(idx + 4);
 
-                    if (!/^HTTP\/1\.[01] 101/.test(head)) {
-                        finish(reject, new Error('upstream refused upgrade: ' + head.split('\r\n')[0]));
-                        secure.destroy();
-                        return;
-                    }
-
-                    upgraded = true;
-                    secure.removeListener('data', onData);
-
-                    // Anything after the upgrade headers in the same TCP chunk is
-                    // already WebSocket data. It is handed to the caller as
-                    // `initial`; dropping it would lose the first frame.
-                    if (process.env.RELAY_DEBUG) process.stderr.write(`upstream ok ${ip} pre=${raw.length}\n`);
-                    finish(resolve, { secure, ip, initial: raw });
+                if (!/^HTTP\/1\.[01] 101/.test(head)) {
+                    finish(reject, new Error('upstream refused upgrade: ' + head.split('\r\n')[0]));
+                    secure.destroy();
                     return;
                 }
+
+                secure.removeListener('data', onData);
+
+                // Anything after the upgrade headers in the same TCP chunk is
+                // already WebSocket data. It is handed to the caller as
+                // `initial`; dropping it would lose the first frame.
+                if (process.env.RELAY_DEBUG) process.stderr.write(`upstream ok ${ip} pre=${raw.length}\n`);
+                finish(resolve, { secure, ip, initial: raw });
             };
 
             secure.on('data', onData);
-            secure.once('error', reject);
-        });
-
-        socket.once('error', reject);
+        }, error => finish(reject, error));
     });
 }
 
@@ -770,7 +798,11 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-    process.stdout.write(`relay listening on http://127.0.0.1:${PORT}\n`);
+    // The outbound path is named, not implied. With a proxy on, the page and the detection socket can
+    // leave from different addresses, and the server answers "Invalid request" without saying which
+    // of the two it saw. Naming it here is what makes that condition readable in the relay log on any
+    // platform, without widening what the unauthenticated /health endpoint returns.
+    process.stdout.write(`relay listening on http://127.0.0.1:${PORT} (outbound ${describeProxy(PROXY)})\n`);
 });
 
 // Exit on its own once nobody has asked for health for a while. Disabled with

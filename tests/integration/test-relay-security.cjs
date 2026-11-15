@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawnRelayFromSource } = require("../support/relay.cjs");
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'relay', 'server.cjs'), 'utf8');
 const target = 'function openUpstream(ip) {';
@@ -60,11 +60,11 @@ function httpCall(port, method, pathname, headers = {}) {
 }
 async function startMockRelay(mockSource, idleMs = '0') {
     const port = await freePort();
-    const code = source.replace(/^#![^\n]*\n/, '').replace(target, mockSource);
-    const child = spawn(process.execPath, ['-e', code], {
-        stdio: ['ignore', 'ignore', 'pipe'],
-        cwd: path.join(__dirname, '..', '..', 'src', 'relay'),
-        env: { ...process.env, RELAY_PORT: String(port), RELAY_IDLE_MS: idleMs, RELAY_HEARTBEAT_TOKEN: token }
+    const child = spawnRelayFromSource({
+        source,
+        marker: target,
+        replacement: mockSource,
+        env: { RELAY_PORT: String(port), RELAY_IDLE_MS: idleMs, RELAY_HEARTBEAT_TOKEN: token }
     });
     let stderr = '';
     child.stderr.on('data', c => (stderr += String(c)));

@@ -8,6 +8,7 @@ const http = require('node:http');
 const path = require('node:path');
 
 const RELAY_SCRIPT = path.join(__dirname, '..', '..', 'src', 'relay', 'server.cjs');
+const RELAY_DIR = path.dirname(RELAY_SCRIPT);
 const DEFAULT_PORT = 9420;
 
 function relayHealthy(port) {
@@ -83,4 +84,24 @@ function stopRelay(child) {
     });
 }
 
-module.exports = { startRelay, stopRelay, relayHealthy, DEFAULT_PORT };
+// Starts a relay whose source has one section swapped out, for tests and diagnostics that need to
+// stand in for the upstream connection.
+//
+// The transformed source is fed on stdin rather than as an argument. `node -e <whole file>` worked
+// only while the file stayed under the Windows command-line limit; past it the spawn fails with
+// ENAMETOOLONG, which reads like a filesystem problem and says nothing about argument length. stdin
+// has no such ceiling, and a script read from stdin resolves its `require`s against the working
+// directory, so the relay's own relative imports keep working.
+function spawnRelayFromSource({ source, marker, replacement, env = {}, cwd = RELAY_DIR }) {
+    const code = source.replace(/^#![^\n]*\n/, '').replace(marker, replacement);
+    const child = spawn(process.execPath, ['-'], {
+        env: Object.assign({}, process.env, env),
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+        cwd
+    });
+    child.stdin.end(code);
+    return child;
+}
+
+module.exports = { startRelay, stopRelay, relayHealthy, spawnRelayFromSource, DEFAULT_PORT };

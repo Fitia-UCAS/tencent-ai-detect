@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const net = require('node:net');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { spawnRelayFromSource } = require("../support/relay.cjs");
 
 const file = path.join(__dirname, '..', '..', 'src', 'relay', 'server.cjs');
 const src = fs.readFileSync(file, 'utf8');
@@ -33,8 +33,6 @@ function openUpstream(ip) {
 }
 function unusedOriginalOpenUpstream(ip) {`;
 
-const code = src.replace(/^#![^\n]*\n/, '').replace(marker, mock);
-
 (async () => {
     const port = await new Promise((resolve, reject) => {
         const server = net.createServer();
@@ -45,10 +43,11 @@ const code = src.replace(/^#![^\n]*\n/, '').replace(marker, mock);
         server.on('error', reject);
     });
 
-    const child = spawn(process.execPath, ['-e', code], {
-        env: { ...process.env, RELAY_PORT: String(port), RELAY_IDLE_MS: '0' },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        cwd: path.join(__dirname, '..', '..', 'src', 'relay')
+    const child = spawnRelayFromSource({
+        source: src,
+        marker,
+        replacement: mock,
+        env: { RELAY_PORT: String(port), RELAY_IDLE_MS: '0' }
     });
 
     let logs = '';
