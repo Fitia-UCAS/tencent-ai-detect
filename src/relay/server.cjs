@@ -603,9 +603,9 @@ server.on('upgrade', (req, socket, head) => {
     // normal path so ordering and the size limits still apply.
     if (head && head.length) onPageData(head);
 
-    // Upstream occasionally accepts the handshake and then drops the socket
-    // without answering. Retrying with a different address costs nothing and
-    // keeps the page from seeing a silent failure.
+    // Upstream occasionally accepts the handshake and then drops the socket without answering.
+    // A rebuilt transport costs nothing and keeps the page from seeing a silent failure; the
+    // identity is kept, because only the socket is being replaced.
     const MAX_ATTEMPTS = 3;
     let attempt = 0;
     let handshakeSent = false;
@@ -633,10 +633,9 @@ server.on('upgrade', (req, socket, head) => {
 
             if (process.env.RELAY_DEBUG) process.stderr.write(`relay start ${ip}\n`);
 
-            // The 101 is only sent once upstream has actually accepted, so a
-            // failure to reach the server surfaces as a failed local connect
-            // (which the shim can fall back from) instead of a socket that looks
-            // open but can never answer.
+            // The 101 is only sent once upstream has actually accepted. A failure to reach the
+            // server therefore surfaces as a failed local connect rather than a socket that looks
+            // open and can never answer.
             if (!handshakeSent) {
                 handshakeSent = true;
                 socket.write(
