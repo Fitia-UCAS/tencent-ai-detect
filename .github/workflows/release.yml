@@ -1,0 +1,98 @@
+name: release
+
+# Publishing is driven by the version in manifest.json, not by a tag someone remembers to push.
+# A tag pushed by hand and a version bumped in the manifest are two places to keep in step, and when
+# they drift the download says one number and the browser shows another. Here the manifest is the
+# single source: bump it, push, and the tag follows.
+#
+# The job is idempotent on purpose. A push that changes nothing about the version finds the release
+# already there and stops, so ordinary commits to main cost nothing and cannot overwrite a published
+# archive.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Read the version from the manifest
+        id: version
+        run: |
+          set -euo pipefail
+
+          manifest="$(node -p "require('./manifest.json').version")"
+          packaged="$(node -p "require('./package.json').version")"
+
+          # Two files carrying one number is the drift this workflow exists to avoid, so a mismatch
+          # stops before anything is published rather than shipping the wrong one.
+          if [ "$manifest" != "$packaged" ]; then
+            echo "manifest.json says $manifest and package.json says $packaged" >&2
+            exit 1
+          fi
+
+          echo "version=$manifest" >> "$GITHUB_OUTPUT"
+          echo "tag=v$manifest" >> "$GITHUB_OUTPUT"
+
+      - name: Check the tree before it is published
+        run: |
+          set -euo pipefail
+          node tools/regression.cjs
+          npm run --silent style:check
+
+      - name: Build the archive
+        run: |
+          set -euo pipefail
+          node scripts/pack-release.cjs --out "dist/tencent-ai-detect-${{ steps.version.outputs.version }}.zip"
+
+      - name: Verify the archive is loadable
+        run: |
+          set -euo pipefail
+          # The module check uses vm.SourceTextModule, which the flag exposes. Without it a content
+          # script's syntax errors would go unreported here and surface in the user's browser instead.
+          node --experimental-vm-modules scripts/verify-release.cjs \
+            "dist/tencent-ai-detect-${{ steps.version.outputs.version }}.zip"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "already published: $TAG"
+            exit 0
+          fi
+
+          archive="dist/tencent-ai-detect-${VERSION}.zip"
+
+          # Notes are generated from the commits since the previous tag, so the release says what
+          # changed without a hand-written file that falls behind.
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "v${VERSION}" \
+            --generate-notes \
+            --notes "朱雀 AI 检测助手 v${VERSION}。解压后以「加载解压缩的扩展」装入 Edge，详见 README。" \
+            "$archive"
+
+          echo "published https://github.com/${{ github.repository }}/releases/tag/${TAG}"
