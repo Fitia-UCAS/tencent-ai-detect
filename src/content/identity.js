@@ -119,6 +119,20 @@
         writeSession(ZQ.IDENTITY_KEY, loadIdentity);
         retryAttribute(ZQ.IDENTITY_ATTR, loadIdentity);
 
+        // Also written to the shared copy, and only as a fallback for the shim.
+        //
+        // The shim runs in the page's own world and reads the attribute first, then sessionStorage,
+        // then localStorage. Leaving this one unwritten made the last step read either nothing or a
+        // value left over from an earlier load, and both are fatal: with no address on the socket the
+        // relay draws a random one, and with a stale one it disagrees with the header rule - either
+        // way the ticket's address and the socket's differ and the server refuses every detection.
+        // Written last so the per-tab surfaces are already in place.
+        try {
+            localStorage.setItem(ZQ.IDENTITY_KEY, loadIdentity);
+        } catch (e) {
+            // Storage blocked; the two per-tab surfaces above are what the shim prefers anyway.
+        }
+
         // A new address starts with a clean handshake count.
         writeSession(ZQ.USE_COUNT_KEY, '0');
         retryAttribute(ZQ.USE_COUNT_ATTR, '0');

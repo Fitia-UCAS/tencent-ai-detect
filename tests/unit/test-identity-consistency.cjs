@@ -77,8 +77,11 @@ check('the identity never goes through storage every tab shares', () => {
     const block = identity.slice(
         identity.indexOf('ZQ.ensureIdentity'), identity.indexOf('ZQ.identityUses'));
 
-    assert.ok(!/localStorage\.(get|set)Item/.test(block), 'the address must not be written to localStorage');
-    assert.ok(!/localStorage/.test(block), 'nor read from it, where the load writes its own');
+    // Writing it is required: the shim's last resort reads it, and an unwritten last resort is
+    // worse than none at all - see the note in ensureIdentity on what a missing address does.
+    assert.ok(/localStorage\.setItem/.test(block), 'the load must leave a fallback value');
+    assert.ok(!/localStorage\.getItem/.test(block),
+        'but the load must never read its own choice back from there: a stored value belongs to a spent address');
 
     const reader = shim.slice(shim.indexOf('function readTabValue'), shim.indexOf('function relayUrl'));
     const attrAt = reader.indexOf('getAttribute');
