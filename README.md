@@ -13,9 +13,7 @@ Node.js is required for the local relay process, along with Edge.
 3. Run `npm run host:register` in the project directory. This registers the native messaging host the relay needs.
 4. Back on `edge://extensions`, reload the extension.
 
-Step 3 runs once. If you move the project directory afterwards, run it again: the host manifest holds an absolute path.
-
-To install from a release instead of the checkout, download the zip from the releases page, extract it, and point step 2 at the extracted folder.
+Step 3 normally runs once; after moving the directory it has to run again.
 
 ## Licence
 
