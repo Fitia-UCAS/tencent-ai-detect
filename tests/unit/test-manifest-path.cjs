@@ -54,15 +54,16 @@ try {
     const second = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     assert.deepEqual(second, actual, 'regeneration must not change the result');
 
-    // The working branch must not track the generated file, so a checkout cannot delete it. main is
-    // the frozen baseline and is deliberately left alone: it still tracks a machine-specific
-    // manifest under host/nm-manifest.json, which is part of why the two branches disagreed.
-    const tracked = spawnSync('git', ['ls-tree', '-r', '--name-only', 'dev'], { cwd: from, encoding: 'utf8' });
+    // The working tree must not track the generated file, so a checkout cannot delete it. This
+    // used to name the `dev` branch literally, back when main was a frozen baseline that tracked a
+    // machine-specific manifest; the two branches have since been consolidated, so the check
+    // follows HEAD instead of assuming a branch name.
+    const tracked = spawnSync('git', ['ls-tree', '-r', '--name-only', 'HEAD'], { cwd: from, encoding: 'utf8' });
     if (tracked.status === 0) {
         const trackedFiles = String(tracked.stdout).split(/\r?\n/);
         assert.ok(
             !trackedFiles.some(f => /nm-manifest\.(local\.)?json$/.test(f) && !f.endsWith('.template.json')),
-            'dev must not track a generated manifest'
+            'the working branch must not track a generated manifest'
         );
     }
 
