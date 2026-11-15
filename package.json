@@ -19,7 +19,7 @@
     "diag:ip-pool": "node tools/diagnostics/diag-ip-pool.cjs",
     "diag:load-timing": "node tools/diagnostics/diag-load-timing.cjs",
     "diag:multitab-identity": "node tools/diagnostics/diag-multitab-identity.cjs",
-    "diag:relay-race": "node tools/diagnostics/diag-relay-race.cjs",
+    "diag:trail": "node tools/diagnostics/read-trail.cjs",    "diag:relay-race": "node tools/diagnostics/diag-relay-race.cjs",
     "diag:tabids-support": "node tools/diagnostics/probe-tabids-support.cjs",
     "diag:exhaust-reload": "node tools/diagnostics/probe-identity-exhaust-reload.cjs",
     "diag:relay-soak": "node tools/diagnostics/diag-relay-soak.cjs",

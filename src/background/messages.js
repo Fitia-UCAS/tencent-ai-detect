@@ -5,7 +5,7 @@
 // and unknown actions return false — returning true there would hold the channel open forever
 // because no callback is ever scheduled.
 
-export function createMessageRouter({ chrome, keys, keepAlive, host, health, usage, identity }) {
+export function createMessageRouter({ chrome, keys, keepAlive, host, health, usage, identity, trail }) {
     const handlers = {
         setRelay(request, sender, respond) {
             const enabled = request.enabled !== false;
@@ -106,6 +106,43 @@ export function createMessageRouter({ chrome, keys, keepAlive, host, health, usa
 
         getStatus(request, sender, respond) {
             usage.readStatus(respond);
+            return true;
+        },
+
+        // Appends one step of this tab's load to its trail. Fire-and-forget on purpose: the page has
+        // already moved on by the time this arrives, so waiting for an answer would only delay it.
+        trace(request, sender, respond) {
+            const tabId = sender && sender.tab ? sender.tab.id : undefined;
+            const payload = request && request.payload ? request.payload : {};
+
+            if (trail) trail.add(tabId, payload.name, payload.detail, payload.page);
+            respond({ status: 'success' });
+            return true;
+        },
+
+        // Reads the trail back, so a failure can be explained from what happened rather than guessed.
+        readTrail(request, sender, respond) {
+            if (!trail) {
+                respond({ status: 'error', message: 'no trail' });
+                return true;
+            }
+
+            const tabId = request && Number.isInteger(request.tabId)
+                ? request.tabId
+                : (sender && sender.tab ? sender.tab.id : undefined);
+
+            trail.read(tabId).then(run => respond({ status: 'success', run }));
+            return true;
+        },
+
+        clearTrail(request, sender, respond) {
+            if (!trail) {
+                respond({ status: 'error', message: 'no trail' });
+                return true;
+            }
+
+            trail.clear(request && Number.isInteger(request.tabId) ? request.tabId : undefined)
+                .then(() => respond({ status: 'success' }));
             return true;
         }
     };

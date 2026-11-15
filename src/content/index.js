@@ -11,11 +11,31 @@
 
     const ZQ = (window.__zq = window.__zq || {});
 
+    // Diagnostics must never be able to take down the page they are describing. core.js defines
+    // ZQ.trace, but this file also runs in environments that load it alone (the document-start test
+    // does exactly that), and a missing tracer would throw from the first thing this file does.
+    if (typeof ZQ.trace !== 'function') {
+        ZQ.trace = function trace() {};
+    }
+
     // The result panel is re-rendered rather than appended, so the subtree is observed instead of
     // polling on a timer.
     function watchResults() {
         const observer = new MutationObserver(() => {
             if (!ZQ.state.enabled || ZQ.state.rotating) return;
+
+            // Every mutation runs this, and the page mutates constantly while a result renders. Only
+            // the transitions are worth keeping: a trail padded with a hundred identical samples
+            // hides the one line that explains the failure.
+            const state = typeof ZQ.pageState === 'function' ? ZQ.pageState() : null;
+            if (state && state !== ZQ.state.lastTracedState) {
+                ZQ.state.lastTracedState = state;
+                ZQ.trace('page-state', {
+                    state,
+                    quota: typeof ZQ.readQuota === 'function' ? ZQ.readQuota() : null
+                });
+            }
+
             ZQ.handlePageState('quota');
         });
 
@@ -62,6 +82,7 @@
                 event.stopPropagation();
                 event.stopImmediatePropagation();
 
+                ZQ.trace('press-blocked', { reason: 'identity-exhausted', uses: ZQ.identityUses() });
                 ZQ.rotate('identity-exhausted');
                 return;
             }
@@ -80,15 +101,29 @@
 
                 // A refusal is often transient - the worker restarting, rules being replaced - so the
                 // press itself is the natural moment to try publishing again.
+                ZQ.trace('press-blocked', { reason: 'identity-unconfirmed' });
                 ZQ.publishIdentity(ZQ.currentIdentity());
                 ZQ.reportState(ZQ.currentState('identity-unconfirmed'));
                 return;
             }
 
+            ZQ.trace('press', {
+                state: ZQ.pageState(),
+                uses: ZQ.identityUses(),
+                spent: ZQ.identitySpent(),
+                challengeOpen: ZQ.captchaOpen(),
+                challengeSeenAt: ZQ.state.challengeSeenAt || 0
+            }, true);
+
             ZQ.send({ action: 'usageIncrement' });
 
             setTimeout(() => {
                 if (!ZQ.state.enabled || ZQ.state.rotating) return;
+
+                ZQ.trace('press-settle', {
+                    state: ZQ.pageState(),
+                    challengeOpen: ZQ.captchaOpen()
+                }, true);
 
                 ZQ.handlePageState('quota-after-click');
             }, 2500);
@@ -159,7 +194,19 @@
 
     // Pick this load's identity before anything is sent, and tell the background so it can put the
     // same address on the page's own captcha request. The shim reads it back for the socket.
-    ZQ.publishIdentity(ZQ.ensureIdentity());
+    const identity = ZQ.ensureIdentity();
+
+    // Read defensively: this runs at document_start, where detection.js has loaded but a page that
+    // blocks early script evaluation may leave those readers missing. A trace that throws here would
+    // take down the whole load, which is the one thing diagnostics must never do.
+    ZQ.trace('load', {
+        identity,
+        pageState: typeof ZQ.pageState === 'function' ? ZQ.pageState() : null,
+        quota: typeof ZQ.readQuota === 'function' ? ZQ.readQuota() : null,
+        autoRefresh: ZQ.state.autoRefresh
+    });
+
+    ZQ.publishIdentity(identity);
 
     // Ask on a timer as well, so a page that is already exhausted and then sits still still
     // rotates without the user clicking anything.

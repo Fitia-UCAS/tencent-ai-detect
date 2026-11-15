@@ -152,4 +152,35 @@
             return Promise.resolve(null);
         }
     };
+
+    // Records one step of this load for later reading.
+    //
+    // The steps of a detection are not a fixed sequence: the challenge comes up for some presses and
+    // not others, the result arrives sooner or later depending on the queue, and the address rule may
+    // never install at all. Every guard in this codebase asks "is X true now", which cannot tell a
+    // step that has not happened from one that already passed. This records what did happen and when,
+    // so a wrong turn is read off the trail instead of inferred from the page's wording.
+    //
+    // `withPage` attaches a structured picture of the page at that instant. The trail alone says what
+    // this extension did; the picture says what it was looking at, which is the difference between a
+    // refusal and a stale view of an older one.
+    ZQ.trace = function trace(name, detail, withPage) {
+        try {
+            let page = null;
+            if (withPage && typeof ZQ.snapshot === 'function') {
+                page = ZQ.snapshot(name);
+            }
+
+            ZQ.send({
+                action: 'trace',
+                payload: {
+                    name: String(name),
+                    detail: detail === undefined ? null : detail,
+                    page
+                }
+            });
+        } catch (e) {
+            // Tracing must never be able to break the page it is describing.
+        }
+    };
 })();

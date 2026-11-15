@@ -57,12 +57,17 @@ check('the identity is stored per tab before it is published', () => {
     const sessionAt = identity.indexOf('writeSession(ZQ.IDENTITY_KEY, loadIdentity)');
     const attrAt = identity.indexOf('retryAttribute(ZQ.IDENTITY_ATTR, loadIdentity)');
     const returnAt = identity.indexOf('return loadIdentity;', Math.max(sessionAt, attrAt));
-    const publishAt = contentIndex.indexOf('ZQ.publishIdentity(ZQ.ensureIdentity())');
+
+    // index.js names the load's address once and publishes that same value, so what is traced and what
+    // is published cannot drift apart. The call order is what matters, not that it is one expression.
+    const ensureAt = contentIndex.indexOf('ZQ.ensureIdentity()');
+    const publishAt = contentIndex.indexOf('ZQ.publishIdentity(identity)');
 
     assert.ok(sessionAt > 0, 'the address must reach sessionStorage for the shim');
     assert.ok(attrAt > 0, 'and the attribute the shim reads first, which survives a storage clear');
     assert.ok(returnAt > Math.max(sessionAt, attrAt), 'ensureIdentity must return it');
-    assert.ok(publishAt > 0, 'index.js must publish it to the background');
+    assert.ok(ensureAt > 0, 'index.js must pick the load address');
+    assert.ok(publishAt > ensureAt, 'and publish that same address to the background');
 });
 
 check('the identity never goes through storage every tab shares', () => {

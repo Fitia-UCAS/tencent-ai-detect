@@ -14,6 +14,7 @@ import { createKeepAlive } from './keepalive.js';
 import { createUsageLog } from './usage-log.js';
 import { createMessageRouter } from './messages.js';
 import { createHeaderRules } from './header-rules.js';
+import { createTrail } from './trail.js';
 import { registerInjection, registerMenuClick, createMenu } from './page-hooks.js';
 import { CONTENT_FILES } from '../content/files.js';
 
@@ -35,8 +36,9 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
         historyLimit: RESET_HISTORY_LIMIT, usageWindowMs: USAGE_WINDOW_MS, usageCap: USAGE_CAP
     });
     const identity = createHeaderRules({ chrome, log });
+    const trail = createTrail({ chrome, key: KEYS.trail });
     const route = createMessageRouter({
-        chrome, keys: KEYS, keepAlive, host, health, usage, identity
+        chrome, keys: KEYS, keepAlive, host, health, usage, identity, trail
     });
 
     // A live nativePort does not imply a live relay, so the alarm asks the host again rather than

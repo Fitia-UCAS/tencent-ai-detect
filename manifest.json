@@ -50,6 +50,7 @@
         "src/content/core.js",
         "src/content/identity.js",
         "src/content/detection.js",
+        "src/content/snapshot.js",
         "src/content/engine.js",
         "src/content/auto.js",
         "src/content/index.js"

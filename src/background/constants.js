@@ -22,7 +22,12 @@ export const KEYS = Object.freeze({
     identityIp: 'identityIp',
     // Why the native host could not be reached. Without this a missing registration looks exactly
     // like a healthy idle extension: nothing happens and nothing says why.
-    hostError: 'hostError'
+    hostError: 'hostError',
+    // Per-tab event trail for the current load. See src/background/trail.js for why the steps cannot
+    // be assumed to arrive in one order.
+    trail: 'zqTrail',
+    // The worker's own log ring, written by src/background/index.js.
+    backgroundLog: 'zqBackgroundLog'
 });
 
 // Seeded on install only when absent, so an update never resets a user's switches.

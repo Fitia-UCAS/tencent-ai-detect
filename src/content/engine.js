@@ -11,6 +11,12 @@
 
     const ZQ = (window.__zq = window.__zq || {});
 
+    // core.js defines ZQ.trace, but engine.js is also exercised on its own (test-transport-recovery
+    // loads just this file), and a missing tracer would throw from the rotation path it is describing.
+    if (typeof ZQ.trace !== 'function') {
+        ZQ.trace = function trace() {};
+    }
+
     // The worker answers in milliseconds when alive. Waiting forever would leave rotating=true,
     // and every later attempt would bail out with the page stuck mid-detect.
     ZQ.RELAY_PROBE_TIMEOUT_MS = 3000;
@@ -112,8 +118,22 @@
 
             if (ZQ.captchaOpen()) {
                 ZQ.state.challengeSeenAt = Date.now();
+                if (!ZQ.state.challengeWasOpen) {
+                    ZQ.state.challengeWasOpen = true;
+                    ZQ.trace('challenge-open', null, true);
+                }
                 ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
                 return;
+            }
+
+            // The transition matters more than the state: the challenge closing is what starts the
+            // wait for the answer, and a guard that only samples "is it open now" cannot see it.
+            if (ZQ.state.challengeWasOpen) {
+                ZQ.state.challengeWasOpen = false;
+                ZQ.trace('challenge-closed', {
+                    openForMs: Date.now() - (ZQ.state.challengeSeenAt || Date.now()),
+                    state: ZQ.pageState()
+                }, true);
             }
 
             // A challenge that has just closed is still worth waiting for: solving it is what the
@@ -127,6 +147,14 @@
             // put back on the other side. Without this a rotation would silently wipe the text the
             // user was in the middle of checking.
             if (typeof ZQ.saveDraft === 'function') ZQ.saveDraft();
+
+            // The last thing recorded before the page is gone. Without it the trail ends mid-story
+            // and the reload cannot be told apart from the page being closed.
+            ZQ.trace('reload', {
+                state: ZQ.pageState(),
+                uses: ZQ.identityUses(),
+                rotations: ZQ.readState().rotations
+            }, true);
 
             location.reload();
         }, delayMs);
@@ -171,6 +199,8 @@
         // Rotating now would reload mid-challenge and discard their work.
         if (ZQ.captchaOpen()) {
             ZQ.state.challengeSeenAt = Date.now();
+            ZQ.state.challengeWasOpen = true;
+            ZQ.trace('rotate-deferred', { reason: 'challenge-open' });
             ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
             return;
         }
@@ -180,6 +210,10 @@
         // user earned would never be seen, which is exactly what "it refreshed before I could read
         // it" describes. scheduleRetry re-checks this and reloads once the answer has had its time.
         if (ZQ.awaitingAfterChallenge()) {
+            ZQ.trace('rotate-deferred', {
+                reason: 'awaiting-answer',
+                sinceChallengeMs: Date.now() - (ZQ.state.challengeSeenAt || 0)
+            });
             ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
             return;
         }
