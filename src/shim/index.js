@@ -36,11 +36,26 @@
             const value = root && root.getAttribute ? root.getAttribute(attr) : null;
             if (value) return value;
         } catch (e) {
-            // Fall through to the storage copy.
+            // Fall through to the storage copies.
         }
 
         try {
-            return window.sessionStorage.getItem(key);
+            const value = window.sessionStorage.getItem(key);
+            if (value) return value;
+        } catch (e) {
+            // Fall through to localStorage.
+        }
+
+        // Last resort, and deliberately still here.
+        //
+        // localStorage is shared by every tab of the site, which is why the two surfaces above come
+        // first: reading it on its own was how one tab's address became another tab's. But returning
+        // nothing is worse than a shared value. A socket without an address parameter makes the
+        // relay draw a random one while the captcha ticket carries the address the header rule set,
+        // and the pair is refused every time - so a fallback that is merely stale still beats one
+        // that guarantees the refusal.
+        try {
+            return window.localStorage.getItem(key);
         } catch (e) {
             return null;
         }

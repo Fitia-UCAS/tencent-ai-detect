@@ -66,14 +66,28 @@ check('the identity is stored per tab before it is published', () => {
 });
 
 check('the identity never goes through storage every tab shares', () => {
-    // localStorage is shared by every tab of the site. While the address lived there, a second tab
-    // overwrote the first tab's value while that tab kept its own address in memory - the divergence
-    // that ends in "Invalid request".
+    // localStorage is shared by every tab of the site. While the address was read from it first, a
+    // second tab silently became the first tab's socket address - the divergence that ends in
+    // "Invalid request".
+    //
+    // It is still read, but only as the last resort after both per-tab surfaces: returning nothing
+    // at all makes the relay draw a random address while the ticket carries the rule's, which is a
+    // guaranteed refusal rather than a possible stale one. So the assertion is about order, not about
+    // the string being absent.
     const block = identity.slice(
         identity.indexOf('ZQ.ensureIdentity'), identity.indexOf('ZQ.identityUses'));
 
-    assert.ok(!/localStorage\.(get|set)Item/.test(block), 'the address must not go through localStorage');
-    assert.ok(!/(window\.)?localStorage\.(get|set)Item/.test(shim), 'and the shim must not read it from there either');
+    assert.ok(!/localStorage\.(get|set)Item/.test(block), 'the address must not be written to localStorage');
+    assert.ok(!/localStorage/.test(block), 'nor read from it, where the load writes its own');
+
+    const reader = shim.slice(shim.indexOf('function readTabValue'), shim.indexOf('function relayUrl'));
+    const attrAt = reader.indexOf('getAttribute');
+    const sessionAt = reader.indexOf('sessionStorage.getItem');
+    const localAt = reader.indexOf('localStorage.getItem');
+
+    assert.ok(attrAt > 0 && sessionAt > 0, 'both per-tab surfaces must be read');
+    assert.ok(attrAt < sessionAt, 'the attribute is the synchronous one, so it comes first');
+    assert.ok(localAt > sessionAt, 'the shared copy may only be the last resort');
 });
 
 check('one identity is kept for the whole load', () => {

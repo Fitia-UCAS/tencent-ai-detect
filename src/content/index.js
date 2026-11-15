@@ -29,6 +29,12 @@
     }
 
     // Usage is counted from clicks on the site's own detect controls.
+    //
+    // The listener is registered in the capture phase, and that is what makes the spent check work.
+    // It used to run in the bubble phase and only look at the count 2500ms later, by which time the
+    // page had already opened the fifth socket on a spent address and the server had refused it -
+    // the "Invalid request" the user saw. Capturing means the press is stopped before the page's own
+    // handler runs, so the refused handshake is never sent at all.
     function monitorUsage() {
         document.addEventListener('click', event => {
             const target = event.target;
@@ -47,24 +53,27 @@
             if (!text.includes('检测') && !text.includes('立即检测') &&
                 !className.includes('detect') && !className.includes('check')) return;
 
+            // Measured: an address serves four handshakes and is refused from the fifth onwards,
+            // permanently. The fifth is the press this address cannot serve, so it is stopped here
+            // rather than sent and refused: the spent address has to be swapped first, and that swap
+            // is a reload.
+            if (ZQ.identitySpent()) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+
+                ZQ.rotate('identity-exhausted');
+                return;
+            }
+
             ZQ.send({ action: 'usageIncrement' });
 
             setTimeout(() => {
                 if (!ZQ.state.enabled || ZQ.state.rotating) return;
 
-                // Measured: an address serves four handshakes and is refused from the fifth onwards.
-                // Deciding on the count rather than on the refusal keeps rotate() off an ambiguous
-                // message, which once caused a reload loop. This press is the one the spent address
-                // cannot serve, so it is the moment to rotate rather than after watching it be
-                // refused: the reload mints a fresh address and auto mode runs it again.
-                if (ZQ.identitySpent()) {
-                    ZQ.rotate('identity-exhausted');
-                    return;
-                }
-
                 ZQ.handlePageState('quota-after-click');
             }, 2500);
-        });
+        }, true);
     }
 
     // Registering listeners also throws on a dead context, so setup is guarded as a whole.
