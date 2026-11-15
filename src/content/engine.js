@@ -533,5 +533,22 @@
     if (typeof window.addEventListener === 'function') {
         // Returned so a caller (a test) can wait for the outcome; the DOM ignores the value.
         window.addEventListener('zq:relay-failed', () => ZQ.handleTransportFailure());
+
+        // What the server actually replied, kept for the trail.
+        //
+        // The page renders its own wording from these frames, and by the time "Invalid request" is on
+        // screen the frame that carried it is gone. Recording it at the boundary is the only place the
+        // two can still be compared: a refusal produced by this load and a leftover panel from an
+        // earlier one leave the same text behind.
+        window.addEventListener('zq:relay-frame', event => {
+            const data = event && event.detail ? String(event.detail) : '';
+
+            ZQ.trace('relay-frame', {
+                bytes: data.length,
+                // Enough of the opening to tell a verdict from a handshake, without storing the
+                // report body the page goes on to render.
+                head: data.slice(0, 160)
+            });
+        });
     }
 })();

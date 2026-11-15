@@ -234,6 +234,23 @@
             };
 
             sock.onmessage = event => {
+                // Record what the server actually said, not what the page made of it.
+                //
+                // "Invalid request" is a string the page renders, and by the time it is on screen the
+                // frame that carried it is gone: entries look identical whether the refusal came from
+                // this load's request or an earlier one, and a success looks identical to a stale
+                // panel. Keeping the first frame's opening bytes makes the two distinguishable.
+                try {
+                    const data = typeof event.data === 'string' ? event.data : '';
+                    if (data) {
+                        window.dispatchEvent(new CustomEvent('zq:relay-frame', {
+                            detail: data.slice(0, 400)
+                        }));
+                    }
+                } catch (e) {
+                    // Reporting must not interfere with delivering the frame itself.
+                }
+
                 this._emit('message', event);
             };
 
