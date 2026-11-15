@@ -79,6 +79,28 @@
     // this only has to cover the host starting its child.
     ZQ.RELAY_RETRY_MS = 2500;
 
+    // How long to leave the page alone after a challenge closes.
+    //
+    // A challenge that is solved disappears at once, but the detection it was gating has not finished
+    // yet - the server answers a moment later. Reloading in that window throws away the result the
+    // user just earned, which reads as "it refreshed before I could see anything". Measured on the
+    // live page: the container is gone well within the challenge's own poll, so captchaOpen() alone
+    // cannot tell "solved, waiting for the answer" apart from "gone, nothing pending".
+    ZQ.CHALLENGE_SETTLE_MS = 6000;
+
+    // When a challenge was last seen open. Zero means none has been seen this load.
+    ZQ.state.challengeSeenAt = 0;
+
+    // Whether a challenge closed too recently for the page's answer to have arrived.
+    //
+    // Solving a challenge is what the detection was waiting on, so the response is still in flight
+    // for a moment after the container disappears. Everything that would reload the page asks this
+    // first; without it the reload beats the answer and the result is never seen.
+    ZQ.awaitingAfterChallenge = function awaitingAfterChallenge() {
+        if (!ZQ.state.challengeSeenAt) return false;
+        return Date.now() - ZQ.state.challengeSeenAt < ZQ.CHALLENGE_SETTLE_MS;
+    };
+
     ZQ.scheduleRetry = function scheduleRetry(delayMs) {
         if (!ZQ.state.contextAlive) return;
         if (ZQ.state.retryTimer) clearTimeout(ZQ.state.retryTimer);
@@ -89,6 +111,14 @@
             if (!ZQ.state.contextAlive || !ZQ.state.autoRefresh) return;
 
             if (ZQ.captchaOpen()) {
+                ZQ.state.challengeSeenAt = Date.now();
+                ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
+                return;
+            }
+
+            // A challenge that has just closed is still worth waiting for: solving it is what the
+            // detection was waiting on, so the answer is on its way. Reloading now would discard it.
+            if (ZQ.awaitingAfterChallenge()) {
                 ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
                 return;
             }
@@ -140,6 +170,16 @@
         // A challenge on screen means the page is waiting on the user, not on a new address.
         // Rotating now would reload mid-challenge and discard their work.
         if (ZQ.captchaOpen()) {
+            ZQ.state.challengeSeenAt = Date.now();
+            ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
+            return;
+        }
+
+        // A challenge that closed seconds ago has just been solved, and the detection it was gating
+        // is still in flight. Rotating here would reload before the answer arrived - the result the
+        // user earned would never be seen, which is exactly what "it refreshed before I could read
+        // it" describes. scheduleRetry re-checks this and reloads once the answer has had its time.
+        if (ZQ.awaitingAfterChallenge()) {
             ZQ.scheduleRetry(ZQ.CAPTCHA_WAIT_MS);
             return;
         }

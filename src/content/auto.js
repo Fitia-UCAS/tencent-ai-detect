@@ -242,7 +242,17 @@
         if (!ZQ.state.enabled || !ZQ.state.autoRefresh || ZQ.state.rotating) return false;
 
         // The challenge belongs to the user. Clicking behind it would also be refused.
-        if (ZQ.captchaOpen()) return false;
+        if (ZQ.captchaOpen()) {
+            // Recorded so the challenge's disappearance is not mistaken for "nothing pending": the
+            // detection it gated is still in flight, and a rotation in that window would throw its
+            // result away before it could be read.
+            ZQ.state.challengeSeenAt = Date.now();
+            return false;
+        }
+
+        // Just solved, answer still on its way. Pressing again would spend a handshake on a page that
+        // is about to update by itself.
+        if (ZQ.awaitingAfterChallenge && ZQ.awaitingAfterChallenge()) return false;
 
         const text = ZQ.readEditor();
         if (!text) return false;

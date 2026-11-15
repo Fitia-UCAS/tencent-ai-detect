@@ -174,8 +174,35 @@ check('waiting re-schedules rather than dropping the reload', () => {
     const body = engine.slice(retryStart, retryEnd);
 
     // Returning without re-scheduling would leave the page stuck on a spent address forever.
-    assert.match(body, /if \(ZQ\.captchaOpen\(\)\) \{\s*ZQ\.scheduleRetry\(ZQ\.CAPTCHA_WAIT_MS\);/,
+    const openBranch = body.match(/if \(ZQ\.captchaOpen\(\)\) \{([\s\S]*?)\n            \}/);
+
+    assert.ok(openBranch, 'the open-challenge branch must exist');
+    assert.match(openBranch[1], /ZQ\.scheduleRetry\(ZQ\.CAPTCHA_WAIT_MS\)/,
         'an open challenge must postpone, then be re-checked');
+    assert.ok(!/location\.reload/.test(openBranch[1]),
+        'and must not reload while the challenge is up');
+});
+
+check('a challenge that just closed is waited out before reloading', () => {
+    // Solving a challenge is what the detection was waiting on, so the answer arrives a moment after
+    // the container disappears. Reloading in that window discards the result the user just earned,
+    // which is the "it refreshed before I could read it" report.
+    const retryStart = engine.indexOf('ZQ.scheduleRetry');
+    const retryEnd = engine.indexOf('ZQ.currentState', retryStart);
+    const body = engine.slice(retryStart, retryEnd);
+
+    assert.ok(body.includes('awaitingAfterChallenge'),
+        'the reload must be gated on the challenge settling');
+    assert.ok(engine.includes('ZQ.CHALLENGE_SETTLE_MS'),
+        'and the settle window must be named');
+
+    // Both places that can reload ask the same question, so the guard cannot be worked around.
+    const rotateStart = engine.indexOf('ZQ.rotate = async');
+    const rotateEnd = engine.indexOf('ZQ.handlePageState', rotateStart);
+    const rotateBody = engine.slice(rotateStart, rotateEnd);
+
+    assert.ok(rotateBody.includes('awaitingAfterChallenge'),
+        'rotate must not beat the answer either');
 });
 
 check('rotation itself refuses to act while a challenge is open', () => {
