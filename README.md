@@ -1,4 +1,4 @@
-# Zhuque Detect Unlimited Plugin
+# Tencent Zhuque Detect Unlimited Plugin
 
 A browser extension (Manifest V3) for <https://matrix.tencent.com/ai-detect/>.
 
