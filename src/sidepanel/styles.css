@@ -10,6 +10,9 @@
       --muted: #697386;
       --line: #e2e8f2;
       --white: #ffffff;
+      /* For the one sentence that says a setting costs something. Not the brand blue: it is a
+         caution, and it must not read as another action. */
+      --warn: #8a5a00;
     }
 
     * {
@@ -352,12 +355,23 @@
     .spent-body-panel {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 7px;
       padding: 11px 12px;
       border-top: 1px solid var(--line);
       color: var(--muted);
       font-size: 11px;
       line-height: 1.45;
+    }
+
+    /* The cost of the chosen wait, shown only when it applies. It wraps onto its own line so the
+       field and its unit keep the row they had before it appeared. */
+    .spent-warning {
+      flex-basis: 100%;
+      margin: 2px 0 0;
+      color: var(--warn);
+      font-size: 11px;
+      line-height: 1.5;
     }
 
     .spent-delay {

@@ -40,16 +40,29 @@ function element(id) {
         setAttribute(name, value) { this.attributes[name] = value; },
         getAttribute(name) { return this.attributes[name] ?? null; },
         addEventListener(type, fn) { (this._handlers ||= {}); (this._handlers[type] ||= []).push(fn); },
-        click() { for (const fn of (this._handlers?.click || [])) fn(); }
+        // A click carries the event the browser would hand over, including preventDefault: a control
+        // that takes over an element's default action has to be able to say so.
+        click() {
+            const event = {
+                defaultPrevented: false,
+                preventDefault() { this.defaultPrevented = true; },
+                stopPropagation() {},
+                stopImmediatePropagation() {}
+            };
+            for (const fn of (this._handlers?.click || [])) fn(event);
+            return event;
+        }
     };
 }
 
-// The four cards, as the panel queries them. Each one carries its own header, and the click handler
-// is bound to that header rather than to the card.
+// The three cards, as the panel queries them. Each one carries its own header, and the click handler
+// is bound to that header rather than to the card. The wait card is a <details> in the real markup,
+// which is why the mode renderer opens it by tag name.
 function makeSpentCards(modes) {
     return modes.map(mode => {
         const card = element('card-' + mode);
         card.dataset.mode = mode;
+        card.tagName = mode === 'delay' ? 'DETAILS' : 'DIV';
         card.head = element('head-' + mode);
         card.querySelector = selector => selector === '.spent-head' ? card.head : null;
         return card;
@@ -62,13 +75,14 @@ function build({ stored = {}, relayOnline = true } = {}) {
     const elements = {
         'spent-delay': element('spent-delay'),
         'spent-delay-hint': element('spent-delay-hint'),
+        'spent-delay-warning': element('spent-delay-warning'),
         'rotate-now': element('rotate-now'),
         'reset-usage': element('reset-usage'),
         notice: element('notice'),
         'host-alert': element('host-alert'),
         'host-alert-detail': element('host-alert-detail')
     };
-    const spentCards = makeSpentCards(['manual', 'press', 'delay', 'immediate']);
+    const spentCards = makeSpentCards(['manual', 'press', 'delay']);
     const writes = [];
 
     const chrome = {
@@ -134,17 +148,17 @@ const marked = app => app.spentCards.filter(card => card.dataset.selected === 't
 // 2. Clicking a card's header chooses it, and the previous card loses the mark.
 {
     const app = build({ stored: { spentMode: 'manual' } });
-    const immediate = app.spentCards.find(c => c.dataset.mode === 'immediate');
-    immediate.head.click();
+    const delay = app.spentCards.find(c => c.dataset.mode === 'delay');
+    delay.head.click();
 
     check('clicking a header chooses that card', () => {
         const selected = marked(app);
         assert.equal(selected.length, 1, 'the previous card must lose the mark');
-        assert.equal(selected[0].dataset.mode, 'immediate');
+        assert.equal(selected[0].dataset.mode, 'delay');
     });
 
     check('choosing a card saves the mode', () => {
-        assert.ok(app.writes.some(w => w.spentMode === 'immediate'), 'the mode must reach storage');
+        assert.ok(app.writes.some(w => w.spentMode === 'delay'), 'the mode must reach storage');
     });
 }
 
@@ -177,8 +191,8 @@ const marked = app => app.spentCards.filter(card => card.dataset.selected === 't
     });
 }
 
-// 4b. A wait can be a fraction. Half a second is a real answer for a page that finishes fast, and
-//     rounding it to a whole second silently changed the value the user typed.
+// 4b. The wait is measured in tenths of a second, and zero is a legal answer - it is the old
+//     "swap now", expressed as a number instead of as a second mode meaning the same thing.
 {
     const app = build({ stored: { spentMode: 'delay', spentDelaySeconds: 1.5 } });
     check('a fractional wait is kept as typed', () => {
@@ -194,6 +208,83 @@ const marked = app => app.spentCards.filter(card => card.dataset.selected === 't
             '0.5 must survive as 0.5, not become 1');
         assert.match(app.elements['spent-delay-hint'].textContent, /0\.5s/);
     });
+
+    app.elements['spent-delay'].value = '1.23';
+    for (const fn of (app.elements['spent-delay']._handlers?.change || [])) fn();
+
+    check('an entry finer than the field step is rounded to the step', () => {
+        assert.ok(app.writes.some(w => w.spentDelaySeconds === 1.2),
+            'the step is a tenth of a second, so 1.23 is stored as 1.2');
+    });
+}
+
+// 4c. Zero swaps at once, and the card says what that costs. This is the setting measured to produce
+//     "Invalid request" (a reload moments after the previous one can leave the socket on a different
+//     address than the ticket), so it warns instead of being silently accepted or silently refused.
+{
+    const app = build({ stored: { spentMode: 'delay', spentDelaySeconds: 2 } });
+    check('a non-zero wait shows no warning', () => {
+        assert.equal(app.elements['spent-delay-warning'].hidden, true);
+    });
+
+    app.elements['spent-delay'].value = '0';
+    for (const fn of (app.elements['spent-delay']._handlers?.change || [])) fn();
+
+    check('a zero wait is stored and warns about what it triggers', () => {
+        assert.ok(app.writes.some(w => w.spentDelaySeconds === 0), 'zero must be storable');
+        assert.match(app.elements['spent-delay-hint'].textContent, /Swaps at once/,
+            'the subtitle must not promise a wait of 0s');
+        assert.equal(app.elements['spent-delay-warning'].hidden, false,
+            'the cost of the setting must be visible when it applies');
+    });
+
+    // Measured on the rendered panel: a zero was stored, the summary said "Swaps at once", and the
+    // sentence explaining what that costs was collapsed inside the card. A warning nobody opens is not
+    // a warning, so the chosen card with a setting opens itself.
+    const zeroed = build({ stored: { spentMode: 'delay', spentDelaySeconds: 0 } });
+
+    check('a stored zero is shown as a zero, with the warning showing', () => {
+        assert.equal(zeroed.elements['spent-delay'].value, '0');
+        assert.equal(zeroed.elements['spent-delay-warning'].hidden, false);
+    });
+
+    check('a chosen card with a setting opens, so its warning is on screen', () => {
+        const chosen = zeroed.spentCards.find(card => card.dataset.mode === 'delay');
+        assert.equal(chosen.open, true, 'the wait card must be open when it is the chosen one');
+
+        const manual = build({ stored: { spentMode: 'manual' } });
+        const delay = manual.spentCards.find(card => card.dataset.mode === 'delay');
+        assert.equal(delay.open, false, 'and must not open when some other card is chosen');
+    });
+
+    // The wait card's header is also its <summary>, which toggles itself as the click's default action -
+    // after the handler has run. Left to both, choosing the card closed it again in the same gesture.
+    check('clicking the wait card opens it, and clicking it again closes it', () => {
+        const app = build({ stored: { spentMode: 'manual' } });
+        const card = app.spentCards.find(c => c.dataset.mode === 'delay');
+
+        const first = card.head.click();
+        assert.equal(first.defaultPrevented, true, 'the default toggle must be taken over, not raced');
+        assert.equal(card.open, true, 'choosing the card must leave its setting on screen');
+
+        card.head.click();
+        assert.equal(card.open, false, 'a second click puts the list back');
+        assert.equal(card.dataset.selected, 'true', 'and must not un-choose the card');
+    });
+}
+
+// 4d. The removed mode is still read, so an existing profile keeps meaning what it meant.
+{
+    const app = build({ stored: { spentMode: 'immediate' } });
+    check('a stored "immediate" is shown as the wait card, not as nothing chosen', () => {
+        const selected = marked(app);
+        assert.equal(selected.length, 1);
+        assert.equal(selected[0].dataset.mode, 'delay');
+    });
+
+    const html = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'sidepanel', 'index.html'), 'utf8');
+    assert.ok(!/data-mode="immediate"/.test(html), 'the removed mode must not be offered again');
 }
 
 // 5. An empty or absurd entry cannot be stored.
@@ -202,7 +293,13 @@ const marked = app => app.spentCards.filter(card => card.dataset.selected === 't
     app.elements['spent-delay'].value = '';
     for (const fn of (app.elements['spent-delay']._handlers?.change || [])) fn();
     check('an empty wait falls back instead of storing nothing', () => {
-        assert.ok(app.writes.some(w => w.spentDelaySeconds === 30), 'must fall back to the default');
+        assert.ok(app.writes.some(w => w.spentDelaySeconds === 2), 'must fall back to the default');
+    });
+
+    app.elements['spent-delay'].value = '-5';
+    for (const fn of (app.elements['spent-delay']._handlers?.change || [])) fn();
+    check('a negative wait is clamped to zero rather than stored', () => {
+        assert.ok(app.writes.some(w => w.spentDelaySeconds === 0), 'the floor is zero');
     });
 }
 
@@ -238,7 +335,7 @@ const marked = app => app.spentCards.filter(card => card.dataset.selected === 't
         path.join(__dirname, '..', '..', 'src', 'sidepanel', 'index.html'), 'utf8');
 
     check('each answer is a card, and only the one with a setting opens', () => {
-        assert.equal((html.match(/class="spent-card"/g) || []).length, 4, 'there must be four cards');
+        assert.equal((html.match(/class="spent-card"/g) || []).length, 3, 'there must be three cards');
 
         // A card with nothing to set must not open: expanding it would reveal nothing.
         const details = html.match(/<details class="spent-card" data-mode="([a-z]+)"/g) || [];

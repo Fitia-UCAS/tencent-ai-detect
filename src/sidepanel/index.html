@@ -44,10 +44,12 @@
           <span>When used up</span>
         </div>
 
-        <!-- Four answers, each its own bordered card with a 3px left edge that turns accent when
+        <!-- Three answers, each its own bordered card with a 3px left edge that turns accent when
              chosen. The server allows five detections per address, so the only choice is when to
-             swap; the answers differ in what they cost - waiting keeps the result readable, going now
-             keeps a run moving. Only the wait card opens, because it is the only one with a setting. -->
+             swap; the answers differ in what they cost - waiting keeps the result readable, swapping
+             keeps a run moving. Only the wait card opens, because it is the only one with a setting.
+             It is also the only card whose wait may be zero: that is the old "swap now", expressed as
+             a number instead of as a second mode meaning the same thing. -->
         <div id="spent-modes" class="spent-modes" role="radiogroup" aria-label="What to do when the address is used up">
           <div class="spent-card" data-mode="manual" data-selected="true">
             <div class="spent-head">
@@ -83,24 +85,24 @@
             <summary class="spent-head">
               <span class="spent-body">
                 <strong>Wait, then swap</strong>
-                <em id="spent-delay-hint">Swaps after 30s</em>
+                <em id="spent-delay-hint">Swaps after 2s</em>
               </span>
             </summary>
             <div class="spent-body-panel">
               <label for="spent-delay">Wait</label>
-              <input id="spent-delay" class="spent-delay" type="number" min="0.5" max="3600" step="0.5" value="30">
+              <input id="spent-delay" class="spent-delay" type="number" min="0" max="3600" step="0.1" value="2">
               <span class="unit">seconds, then swap</span>
+              <!-- Zero is allowed and means swap at once. It is also the setting behind "Invalid
+                   request": reloading the moment the allowance runs out leaves the fresh page's
+                   socket and its captcha ticket disagreeing about the address often enough to be
+                   seen. Saying so here is the only place the cost can be known before choosing it. -->
+              <p id="spent-delay-warning" class="spent-warning" hidden>
+                0 swaps the moment the allowance runs out — that is the setting that triggers
+                “Invalid request”, because a reload that fast can leave the socket on a different
+                address than the ticket. A second or two avoids it.
+              </p>
             </div>
           </details>
-
-          <div class="spent-card" data-mode="immediate">
-            <div class="spent-head">
-              <span class="spent-body">
-                <strong>Swap now</strong>
-                <em>Reloads as soon as the allowance is gone</em>
-              </span>
-            </div>
-          </div>
         </div>
       </section>
     </div>

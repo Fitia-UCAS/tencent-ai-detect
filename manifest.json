@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tencent AI Detect",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Browser extension for Tencent AI Detect.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvgdtM1hOl60CCRMIvlkYpjT6/3zHo/P0HreAfGS7FjkHBpvzY3nn6llexHNshsu/iDCkCA29QwmzoJxH87j+yOWoG+9G3KaqoxJKTCgM/14xp2q3YlOLQM+bMbgTVN4Q6H8vAw1lm0n/7GfKr/DomhmpQfKbBOS+oWbNagTDalYq4qFOta/ctYripbeu2I/WTr0Hwz3NgdEavQjt/pxx3uMmim1tRqOyV0hmVVB304pCy39QkDRus/fMuSWFNmxKKPgto4B90E29JSLnJWLEKBO+PNhNUKR02YwCVVGoWOce+BAT9QHTWFSLHKg7Id+Mjl4Xxc53Cvu6ODtDEyiKfQIDAQAB",
   "permissions": [

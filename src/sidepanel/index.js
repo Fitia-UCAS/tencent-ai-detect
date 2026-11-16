@@ -1,6 +1,6 @@
 'use strict';
 
-// The side panel: four answers to "what happens once the address is used up", and the one control
+// The side panel: three answers to "what happens once the address is used up", and the one control
 // that swaps the address on demand.
 //
 // The panel owns the preference and the content script reads it when the address runs out, so the
@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hostAlertDetail = document.getElementById('host-alert-detail');
     const spentDelay = document.getElementById('spent-delay');
     const spentDelayHint = document.getElementById('spent-delay-hint');
+    const spentDelayWarning = document.getElementById('spent-delay-warning');
     const rotateButton = document.getElementById('rotate-now');
     const spentCards = Array.from(document.querySelectorAll('.spent-card'));
 
@@ -57,45 +58,98 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- the four answers ---
+    // --- the three answers ---
 
     // The mark lives on the card because the left edge is drawn there. Rendering the whole group from
     // one stored value keeps the panel from drifting into a state where two cards look chosen, or none.
+    //
+    // The chosen cards that carry a setting also open. Measured: a stored zero showed "Swaps at once" in
+    // the summary while the sentence explaining why that is the risky setting sat collapsed underneath
+    // it - visible to the DOM, invisible to the person choosing.
     const renderSpentMode = mode => {
         for (const card of spentCards) {
-            card.dataset.selected = String(card.dataset.mode === mode);
+            const chosen = card.dataset.mode === mode;
+            card.dataset.selected = String(chosen);
+            if (chosen && card.tagName === 'DETAILS') card.open = true;
         }
     };
 
+    // A wait of zero is a legal answer, and it is the one that costs something: the page reloads the
+    // moment the allowance runs out, and a reload that fast is what leaves a fresh page's socket and
+    // its captcha ticket disagreeing about the address. Said here, once, in the card that owns the
+    // number - the panel warns, it does not refuse, because the choice is the user's.
+    const renderSpentDelay = seconds => {
+        const value = String(seconds);
+        if (spentDelay) spentDelay.value = value;
+        if (spentDelayHint) {
+            spentDelayHint.textContent = seconds === 0
+                ? 'Swaps at once'
+                : 'Swaps after ' + value + 's';
+        }
+        if (spentDelayWarning) spentDelayWarning.hidden = seconds !== 0;
+    };
+
+    // The field is a tenth of a second: finer than that cannot be observed, and coarser is the
+    // difference between "immediately" and "a moment", which is the distinction this setting exists for.
+    const WAIT_STEP = 0.1;
+    const DEFAULT_WAIT_SECONDS = 2;
+
+    const clampWait = raw => {
+        // Number('') is 0, which would read as an emptied field meaning "swap at once" - the very
+        // answer that costs something. Absence falls back instead.
+        if (raw === '' || raw === null || raw === undefined) return DEFAULT_WAIT_SECONDS;
+
+        const seconds = Number(raw);
+        if (!Number.isFinite(seconds)) return DEFAULT_WAIT_SECONDS;
+
+        // Rounded in tenths rather than by multiplying by the step: 1.23 * 10 / 0.1 lands on
+        // 1.2000000000000002, and a stored value like that reaches the page as a wait nobody asked for.
+        const stepped = Math.round(seconds * 10) / 10;
+
+        return Math.min(3600, Math.max(0, stepped));
+    };
+
     chrome.storage.local.get(['spentMode', 'spentDelaySeconds'], state => {
-        const seconds = Number.isFinite(state.spentDelaySeconds) ? state.spentDelaySeconds : 30;
-        renderSpentMode(state.spentMode || 'manual');
-        if (spentDelay) spentDelay.value = String(seconds);
-        if (spentDelayHint) spentDelayHint.textContent = 'Swaps after ' + seconds + 's';
+        const seconds = clampWait(state.spentDelaySeconds);
+
+        // A profile that still carries the removed 'immediate' mode meant a zero wait.
+        renderSpentMode(state.spentMode === 'immediate' ? 'delay' : (state.spentMode || 'manual'));
+        renderSpentDelay(seconds);
     });
 
     // Clicking a header chooses the card. On the wait card the same click also opens it, because
-    // <details> does that itself: choosing it and setting its wait are one gesture.
+    // choosing it and setting its wait are one gesture.
+    //
+    // That open is asked for here rather than left to the click, because the header of the wait card is
+    // also its <summary>: the element toggles itself as the click's default action, which happens after
+    // this handler has run. Measured: choosing the wait card closed it again in the same click, so the
+    // setting it owns was never on screen. The default is therefore taken over - once, in one place.
     for (const card of spentCards) {
         const head = card.querySelector('.spent-head');
         if (!head) continue;
 
-        bind(head, 'click', () => {
+        bind(head, 'click', event => {
             const spentMode = card.dataset.mode;
+            const wasChosen = card.dataset.selected === 'true';
+
             renderSpentMode(spentMode);
             chrome.storage.local.set({ spentMode });
+
+            if (card.tagName === 'DETAILS') {
+                event.preventDefault();
+                // A newly chosen card opens; the card already chosen toggles, so a click can also put
+                // the list back the way it was.
+                card.open = wasChosen ? !card.open : true;
+            }
         });
     }
 
-    // A wait can be a fraction: half a second is a real answer for a page that finishes fast. Two
-    // decimals express any useful wait and keep the field readable. Committed on change rather than on
-    // every keystroke, which would store 3, 30, 300 while someone types 300.
+    // Committed on change rather than on every keystroke, which would store 3, 30, 300 while someone
+    // types 300. Rounded to the step the field advertises, so what is stored is what was asked for.
     bind(spentDelay, 'change', () => {
-        const seconds = Math.min(3600, Math.max(0.5, Number(spentDelay.value) || 30));
-        const rounded = Math.round(seconds * 100) / 100;
-        spentDelay.value = String(rounded);
-        if (spentDelayHint) spentDelayHint.textContent = 'Swaps after ' + rounded + 's';
-        chrome.storage.local.set({ spentDelaySeconds: rounded });
+        const seconds = clampWait(spentDelay.value);
+        renderSpentDelay(seconds);
+        chrome.storage.local.set({ spentDelaySeconds: seconds });
     });
 
     // --- swapping on demand ---

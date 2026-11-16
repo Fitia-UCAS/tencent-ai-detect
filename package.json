@@ -1,7 +1,7 @@
 {
   "$schema": "./schemas/package.schema.json",
   "name": "tencent-ai-detect",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
   "type": "module",
   "description": "Browser extension for Tencent AI Detect",
@@ -39,6 +39,8 @@
     "diag:ws-headers": "node tools/diagnostics/diag-ws-headers.cjs",
     "diag:proxy-path": "node tools/diagnostics/diag-proxy-path.cjs",
     "diag:proxy-headers": "node tools/diagnostics/diag-proxy-headers.cjs",
+    "diag:panel-wait": "node tools/diagnostics/diag-panel-wait.cjs",
+    "diag:identity-race": "node tools/diagnostics/diag-identity-race.cjs",
     "relay": "node src/relay/server.cjs",
     "relay:smoke": "node tools/relay-smoke.cjs",
     "review:compare": "node tools/compare-review.cjs",

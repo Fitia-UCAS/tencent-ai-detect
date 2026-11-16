@@ -24,10 +24,11 @@
     ZQ.state = {
         enabled: true,
         autoRefresh: true,
-        // 'manual' | 'press' | 'delay' | 'immediate'. The panel owns this; see ZQ.readSpentMode.
+        // 'manual' | 'press' | 'delay'. The panel owns this; see ZQ.readSpentMode.
         spentMode: 'manual',
-        // Only used by 'delay'. Seconds, because that is what the panel shows.
-        spentDelaySeconds: 30,
+        // Only used by 'delay'. Seconds, because that is what the panel shows. Zero is a legal value
+        // and means "swap as soon as the allowance is gone"; the panel says what that costs.
+        spentDelaySeconds: 2,
         rotating: false,
         retryTimer: null,
         contextAlive: true,

@@ -388,10 +388,26 @@
         return ZQ.SPENT_MODES.indexOf(mode) !== -1 ? mode : 'manual';
     };
 
-    // How long to wait before swapping on the 'delay' setting, in ms. The panel stores seconds.
+    // How long to wait before swapping on the 'delay' setting, in ms. The panel stores seconds, and
+    // zero is a real answer: it means swap as soon as the allowance is gone.
+    ZQ.DEFAULT_SPENT_DELAY_SECONDS = 2;
+
     ZQ.readSpentDelayMs = function readSpentDelayMs() {
         const seconds = Number(ZQ.state.spentDelaySeconds);
-        return (Number.isFinite(seconds) && seconds > 0 ? seconds : 30) * 1000;
+        const usable = Number.isFinite(seconds) && seconds >= 0
+            ? seconds
+            : ZQ.DEFAULT_SPENT_DELAY_SECONDS;
+
+        return usable * 1000;
+    };
+
+    // Whether the setting swaps the address the instant the allowance is gone, with nothing waited on.
+    //
+    // This is the old 'immediate' mode, now expressed as the wait being zero. It is asked wherever the
+    // answer used to be "is the mode 'immediate'?", so there stays one definition of it: a press on a
+    // spent address may pass through only because the page is about to replace itself anyway.
+    ZQ.swapsAtOnce = function swapsAtOnce() {
+        return ZQ.readSpentMode() === 'delay' && ZQ.readSpentDelayMs() === 0;
     };
 
     // How long the swap modes have to wait after a rotation before they may swap again.
@@ -413,12 +429,15 @@
     ZQ.onAddressSpent = function onAddressSpent(reason) {
         const mode = ZQ.readSpentMode();
 
-        // Both modes that swap are paced by the same cooldown, because both can be reached from the
+        // Swapping is paced, whatever the wait is set to, because it can be reached from the
         // observer, which fires on every DOM change while a page mid-detection changes constantly.
         // Measured over nine minutes of a single session without it: 176 reloads and 138 loads,
         // peaking at 46 in one minute - the reload destroys the page about to report the real state,
         // the fresh page looks spent again for a moment, and the cycle repeats.
-        if (mode === 'immediate' || mode === 'delay') {
+        //
+        // This is also what keeps a wait of zero from becoming a loop: the first swap is immediate,
+        // and the next one waits for the cooldown like any other.
+        if (mode === 'delay') {
             const since = Date.now() - (Number(ZQ.readState().lastRotationAt) || 0);
 
             if (since < ZQ.QUOTA_ROTATE_COOLDOWN_MS) {
@@ -426,34 +445,30 @@
                 ZQ.reportState(ZQ.currentState('quota'));
                 return;
             }
-        }
 
-        if (mode === 'immediate') {
-            ZQ.trace('spent-swap', { mode, reason, uses: ZQ.identityUses() });
-            ZQ.forceRotate('spent');
-            return;
-        }
-
-        if (mode === 'delay') {
             // The wait lives in storage, not in memory: a wait that restarts on every reload would
             // never finish on a page the user reloads, and this one reloads itself.
             const held = Number(ZQ.readState().spentSince) || 0;
             const waitMs = ZQ.readSpentDelayMs();
 
-            if (!held) {
-                ZQ.writeState({ spentSince: Date.now() });
-                ZQ.reportSpentOnce();
-                return;
+            // A wait of zero has nothing to hold, and recording a timestamp for it would make the
+            // next load wait out the remainder of a hold the user never asked for.
+            if (waitMs > 0) {
+                if (!held) {
+                    ZQ.writeState({ spentSince: Date.now() });
+                    ZQ.reportSpentOnce();
+                    return;
+                }
+
+                if (Date.now() - held < waitMs) {
+                    ZQ.reportSpentOnce();
+                    return;
+                }
             }
 
-            if (Date.now() - held >= waitMs) {
-                ZQ.writeState({ spentSince: 0 });
-                ZQ.trace('spent-swap', { mode, reason, waited: Date.now() - held, waitMs });
-                ZQ.forceRotate('spent');
-                return;
-            }
-
-            ZQ.reportSpentOnce();
+            ZQ.writeState({ spentSince: 0 });
+            ZQ.trace('spent-swap', { mode, reason, waited: held ? Date.now() - held : 0, waitMs });
+            ZQ.forceRotate('spent');
             return;
         }
 

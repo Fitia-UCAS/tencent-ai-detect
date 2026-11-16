@@ -158,18 +158,18 @@ check('one predicate answers "is the address spent", and one place acts on it', 
         'and never starts a rotation itself');
 });
 
-// The two modes that keep the page must keep it on every path, including the observer and the
-// watchdog. Only the modes that swap may reach a rotation, and both are paced by the same cooldown.
-check('the two modes that keep the page never rotate, on any path', () => {
+// The modes that keep the page must keep it on every path, including the observer and the watchdog.
+// Only the mode that swaps may reach a rotation, and it is paced by the cooldown.
+check('only the swapping mode can rotate, on any path', () => {
     const engine = read('src/content/engine.js');
     const decide = engine.slice(engine.indexOf('ZQ.onAddressSpent'), engine.indexOf('ZQ.WATCHDOG_MS'));
 
-    assert.match(decide, /if \(mode === 'immediate'\) \{[\s\S]*?ZQ\.forceRotate\('spent'\);/,
-        'immediate swaps at once');
     assert.match(decide, /if \(mode === 'delay'\) \{[\s\S]*?ZQ\.forceRotate\('spent'\);/,
-        'delay swaps once the wait is over');
-    assert.equal((decide.match(/ZQ\.forceRotate\(/g) || []).length, 2,
-        'exactly the two swapping modes may rotate, so no other mode can reach one');
+        'delay swaps once its wait is over, including a wait of zero');
+    assert.ok(!/mode\s*[!=]==\s*'immediate'/.test(decide),
+        'the removed mode must not survive as a second branch to the same decision');
+    assert.equal((decide.match(/ZQ\.forceRotate\(/g) || []).length, 1,
+        'exactly one branch may rotate, so no other mode can reach one');
     assert.match(decide, /ZQ\.reportSpentOnce\(\);\n    \};/,
         'everything else reports the state and leaves the page alone');
 });
@@ -304,6 +304,44 @@ check('the relay validator rejects header injection', () => {
     assert.equal(isIpv4('112.80.1.2'), true);
     assert.equal(isIpv4('1.2.3.4\r\nX-Injected: 1'), false);
     assert.equal(isIpv4('1.2.3'), false);
+});
+
+// --- what the settings reader makes of a stored profile -------------------
+
+// The panel writes these values, but the reader is what decides what a profile means - including one
+// written by an older build. 'immediate' was a separate mode before the wait accepted zero, so a
+// profile holding it means "wait zero seconds", not "fall back to the default".
+check('a removed mode is read as the zero wait it meant', () => {
+    const source = read('src/content/index.js');
+    const start = source.indexOf('function resolveSpentSettings');
+    assert.ok(start !== -1, 'the settings reader must exist');
+
+    const body = source.slice(start, source.indexOf('\n    }', start) + 6)
+        .replace('function resolveSpentSettings', 'function resolveSpentSettings')
+        .replace(/ZQ\.DEFAULT_SPENT_DELAY_SECONDS/g, '2')
+        .replace(/ZQ\.SPENT_MODES/g, "['manual', 'press', 'delay']");
+
+    const resolve = vm.runInNewContext('(' + body + ')', {});
+
+    // Compared as plain data: an object built inside another vm realm has that realm's prototypes, and
+    // a structural comparison of the two would be about the realms rather than about the values.
+    const read2 = value => JSON.parse(JSON.stringify(value));
+
+    assert.deepEqual(read2(resolve({ spentMode: 'immediate', spentDelaySeconds: 30 })),
+        { spentMode: 'delay', spentDelaySeconds: 0 },
+        'the old mode must not be dropped to the default, and its stale wait must not win');
+
+    assert.deepEqual(read2(resolve({ spentMode: 'delay', spentDelaySeconds: 0 })),
+        { spentMode: 'delay', spentDelaySeconds: 0 },
+        'zero must survive as zero');
+
+    assert.deepEqual(read2(resolve({ spentMode: 'delay' })),
+        { spentMode: 'delay', spentDelaySeconds: 2 },
+        'an absent wait falls back to the default');
+
+    assert.deepEqual(read2(resolve({ spentMode: 'nonsense' })),
+        { spentMode: 'manual', spentDelaySeconds: 2 },
+        'an unknown mode keeps the page rather than swapping it');
 });
 
 const failed = checks.filter(ok => !ok).length;

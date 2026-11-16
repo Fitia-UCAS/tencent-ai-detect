@@ -94,7 +94,11 @@
 
     // Modes for what happens once the address is spent. Reported by the panel so this stays one
     // decision rather than three code paths that each guess.
-    ZQ.SPENT_MODES = ['manual', 'press', 'delay', 'immediate'];
+    //
+    // One swapping mode, not two. 'immediate' used to sit beside 'delay' and was the same decision with
+    // the wait hard-coded to zero, which the wait now expresses directly: it accepts zero. One mode
+    // means one code path, and the number the user typed is the number that is used.
+    ZQ.SPENT_MODES = ['manual', 'press', 'delay'];
 
     // Same ranges the relay draws from, so a chosen address looks like a normal client.
     ZQ.IDENTITY_PREFIXES = [

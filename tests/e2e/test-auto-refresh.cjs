@@ -139,8 +139,9 @@ const fail = text => {
             return (marker.result && marker.result.value) === 'before';
         };
 
-        const setMode = mode => worker.send('Runtime.evaluate', {
-            expression: `chrome.storage.local.set({ spentMode: ${JSON.stringify(mode)} })`,
+        const setMode = (mode, seconds) => worker.send('Runtime.evaluate', {
+            expression: `chrome.storage.local.set({ spentMode: ${JSON.stringify(mode)}` +
+                (seconds === undefined ? '' : `, spentDelaySeconds: ${Number(seconds)}`) + ' })',
             awaitPromise: true
         });
 
@@ -188,8 +189,9 @@ const fail = text => {
             : ok('a page set to keep itself is left exactly where it is');
 
         // The other half of the same setting: when the swap is wanted, it has to happen without a
-        // click. The page is still reading as spent, so switching the mode is the only change.
-        await setMode('immediate');
+        // click. The page is still reading as spent, so switching the mode is the only change. A zero
+        // wait is the answer that swaps at once, which is what this half is about.
+        await setMode('delay', 0);
 
         let navigated = false;
         for (let i = 0; i < 20; i += 1) {

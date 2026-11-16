@@ -75,7 +75,9 @@ function load(bodyText, files = FILES, options = {}) {
                         callback({
                             autoRefresh: true,
                             spentMode,
-                            spentDelaySeconds: options.spentDelaySeconds || 30
+                            // Zero is the interesting answer here, so it must survive as zero rather
+                            // than being read as "absent" and replaced by the default.
+                            spentDelaySeconds: options.spentDelaySeconds ?? 2
                         });
                     },
                     set() {}
@@ -106,8 +108,12 @@ function load(bodyText, files = FILES, options = {}) {
     }
 
     // The engine-only loads never reach the storage read that index.js performs, so the mode under
-    // test is set directly. Either way the script's own reader sees one value.
-    if (sandbox.window.__zq) sandbox.window.__zq.state.spentMode = spentMode;
+    // test is set directly. Either way the script's own reader sees one value - including the wait,
+    // which decides whether a swapping mode is observed inside a short test window at all.
+    if (sandbox.window.__zq) {
+        sandbox.window.__zq.state.spentMode = spentMode;
+        sandbox.window.__zq.state.spentDelaySeconds = options.spentDelaySeconds ?? 2;
+    }
 
     return {
         zq: sandbox.window.__zq,
@@ -153,7 +159,7 @@ const check = async (name, fn) => {
 
     // The watchdog asks on its own, and with a swapping mode the rotation actually starts.
     await check('the watchdog starts a rotation on a static exhausted page', async track => {
-        const app = track(load(EXHAUSTED, FILES, { spentMode: 'immediate' }));
+        const app = track(load(EXHAUSTED, FILES, { spentMode: 'delay', spentDelaySeconds: 0 }));
         assert.equal(typeof app.zq.startWatchdog, 'function', 'engine must expose startWatchdog');
         const stop = app.zq.startWatchdog(40);
         await wait(200);
@@ -206,12 +212,31 @@ const check = async (name, fn) => {
     // Repeated ticks must not stack rotations: the engine refuses while one is in flight, and the
     // cooldown keeps a second one from firing immediately after.
     await check('repeated ticks do not stack rotations', async track => {
-        const app = track(load(EXHAUSTED, FILES, { spentMode: 'immediate' }));
+        const app = track(load(EXHAUSTED, FILES, { spentMode: 'delay', spentDelaySeconds: 0 }));
         const stop = app.zq.startWatchdog(20);
         await wait(300);
         stop();
         assert.ok(app.rotations() >= 1, 'expected at least one rotation');
         assert.ok(app.rotations() <= 2, 'expected at most two, got ' + app.rotations());
+    });
+
+    // A wait of zero swaps at once; a wait that is not zero actually waits. The second half is what
+    // the panel promises, and it is also the setting that avoids "Invalid request" - so it must not
+    // quietly behave like the first.
+    await check('a zero wait swaps at once, a real wait holds the page', async track => {
+        const immediate = track(load(EXHAUSTED, FILES, { spentMode: 'delay', spentDelaySeconds: 0 }));
+        const stopFast = immediate.zq.startWatchdog(40);
+        await wait(200);
+        stopFast();
+        assert.ok(immediate.rotations() >= 1,
+            'a zero wait must not be read as "no rotation", got ' + immediate.rotations());
+
+        const held = track(load(EXHAUSTED, FILES, { spentMode: 'delay', spentDelaySeconds: 5 }));
+        const stopSlow = held.zq.startWatchdog(40);
+        await wait(300);
+        stopSlow();
+        assert.equal(held.rotations(), 0,
+            'a five second wait must survive a third of a second of watching');
     });
 
     // Stopping the watchdog must actually stop it, or a dead context keeps scheduling reloads.
@@ -226,7 +251,7 @@ const check = async (name, fn) => {
     // The wiring: index.js must start the watchdog by itself. Without this the engine could be
     // correct and still never run, which is how the gap survived a passing test suite.
     await check('index.js starts the watchdog without being asked', async track => {
-        const app = track(load(EXHAUSTED, ALL_FILES, { spentMode: 'immediate' }));
+        const app = track(load(EXHAUSTED, ALL_FILES, { spentMode: 'delay', spentDelaySeconds: 0 }));
         await wait(6000);
         assert.ok(app.rotations() >= 1, 'the shipped wiring should have rotated, got ' + app.rotations());
     });
