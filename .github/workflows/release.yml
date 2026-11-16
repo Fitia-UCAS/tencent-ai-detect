@@ -127,7 +127,7 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "v${VERSION}" \
             --generate-notes \
-            --notes "朱雀 AI 检测助手 v${VERSION}。解压后以「加载解压缩的扩展」装入 Edge，详见 README。" \
+            --notes "Zhuque Detect Assistant v${VERSION}. Unzip it and load it as an unpacked extension in Edge; see the README." \
             "$archive"
 
           echo "published https://github.com/${{ github.repository }}/releases/tag/${TAG}"
