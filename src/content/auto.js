@@ -23,6 +23,12 @@
 
     const ZQ = (window.__zq = window.__zq || {});
 
+    // core.js defines ZQ.trace, but this file is also exercised on its own (test-auto-detect loads
+    // just this file), and a missing tracer must not throw from the path it is describing.
+    if (typeof ZQ.trace !== 'function') {
+        ZQ.trace = function trace() {};
+    }
+
     const DRAFT_KEY = 'zqDraft';
     // The text the last automatic click ran on. Comparing against it is what stops the interval
     // from firing a detection every tick on the same text.
@@ -146,12 +152,26 @@
     //   quota-decrement-observed  the displayed quota fell; this is NOT proof of completion
     //   blocked                the page shows the server's refusal; pressing again would send the
     //                          same doomed request
+    //   retryable              the server accepted the request and then failed its own run. Nothing was
+    //                          charged for it and nothing about the submission was wrong, so this is
+    //                          the one state that a second ask can change
     //   unknown                a value written by an older build as a bare fingerprint
     //
-    // None of these permit an automatic re-press. A refusal cannot be retried into a success - the
-    // ticket is gone - and an unconfirmed press cannot be told apart from a slow one. That is why
-    // there is no retry here at all: the cost of guessing wrong is a request the server refuses.
+    // Apart from `retryable`, none of these permits an automatic re-press. A refusal cannot be retried
+    // into a success - the ticket is gone - and an unconfirmed press cannot be told apart from a slow
+    // one. That is why the retry below is limited to the one failure the trail shows changing its
+    // answer.
     const ATTEMPT_KEY = LAST_DETECTED_KEY;
+
+    // How many further asks the server's own failure gets. One: it consumed nothing, and the same
+    // text was answered on the very next press both times it was measured, so a single re-ask turns a
+    // page left showing the server's error back into the detection that was wanted. More than one
+    // would be asking a server that keeps throwing.
+    const TRANSIENT_RETRIES = 1;
+
+    function attemptsOf(attempt) {
+        return Number(attempt && attempt.a) || 1;
+    }
 
     function readAttempt() {
         let raw = null;
@@ -212,7 +232,14 @@
 
         let settled = null;
 
-        if (typeof ZQ.pageState === 'function' && ZQ.pageState() === 'ambiguous') {
+        // The server's own failure first: it is a direct observation of the reply and it names this
+        // request, which the quota cannot. Only one that arrived strictly after the press belongs to
+        // it - equal timestamps are a press and a reply inside the same millisecond, and reading that
+        // as an answer would retry a request still in flight.
+        const failure = ZQ.state.transientFailure;
+        if (failure && failure.at > attempt.t) {
+            settled = 'retryable';
+        } else if (typeof ZQ.pageState === 'function' && ZQ.pageState() === 'ambiguous') {
             settled = 'blocked';
         } else {
             const quota = currentQuota();
@@ -272,10 +299,14 @@
 
         const print = fingerprint(text);
         const previous = settleAttempt();
+        const repeated = previous && previous.f === print ? previous : null;
 
-        // Any recorded state for this text means it has had its press. See the note above on why
-        // none of them is retried.
-        if (previous && previous.f === print) return false;
+        // A recorded state for this text means it has had its press, and only one of them is worth
+        // another: the server's own failure, which charged nothing and is the one answer that changed
+        // when asked again. The count is in the record, so that happens once.
+        if (repeated && !(repeated.s === 'retryable' && attemptsOf(repeated) <= TRANSIENT_RETRIES)) {
+            return false;
+        }
 
         const button = ZQ.detectButton();
         if (!button || button.disabled) return false;
@@ -288,11 +319,15 @@
         const recorded = writeAttempt({
             f: print,
             s: 'submitted-unconfirmed',
-            a: 1,
+            a: repeated ? attemptsOf(repeated) + 1 : 1,
             t: Date.now(),
             q: currentQuota()
         });
         if (!recorded) return false;
+
+        // The trail is where the difference between "asked once" and "asked again" is visible after
+        // the fact, and a retry that is not recorded reads like a duplicate submission.
+        if (repeated) ZQ.trace('transient-retry', { attempt: attemptsOf(repeated) }, true);
 
         button.click();
 

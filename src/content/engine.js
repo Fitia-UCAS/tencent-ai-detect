@@ -671,6 +671,52 @@
         ZQ.scheduleRetry(1200);
     };
 
+    // The server's own words for "my run threw".
+    //
+    // Measured on a load that submitted fourteen times: the ticket and the text were accepted (code 1,
+    // then the text), the reply "waiting" arrived, and 8-15ms later this frame instead of a report. It
+    // is not a refusal - no code 21 precedes it, the challenge was closed at the press, and the
+    // availableUses it carries is the count from before the request, so nothing was charged for it.
+    // The submission that hit it was byte for byte the submission that was answered with a report
+    // twelve times in the same load, so there is nothing about the request to correct and nothing to
+    // avoid.
+    //
+    // What is left is to ask again once. Rotating for it would spend an address on a failure the
+    // address had nothing to do with.
+    ZQ.TRANSIENT_FAILURE = /^Exception Occured/;
+
+    // Returns the message when a reply frame is that failure, otherwise null.
+    //
+    // Pure on purpose: the wording is pinned by a test instead of being rediscovered from a log, and
+    // the listener below stays one call. Everything else in this file reads the page; this reads the
+    // frame, because the frame is the fact and the page's wording is the site's rendering of it.
+    ZQ.readTransientFailure = function readTransientFailure(text) {
+        if (typeof text !== 'string' || text.indexOf('failed') === -1) return null;
+
+        let reply;
+        try {
+            reply = JSON.parse(text);
+        } catch (e) {
+            return null;
+        }
+
+        if (!reply || reply.status !== 'failed') return null;
+        if (typeof reply.msg !== 'string' || !ZQ.TRANSIENT_FAILURE.test(reply.msg)) return null;
+
+        return reply.msg;
+    };
+
+    // Where that failure is remembered. auto.js decides whether the text may be asked for again, and
+    // it owns the record of which text was pressed; this is the observation that record is settled
+    // from. The timestamp is what ties it to one attempt: an attempt records its own time before
+    // clicking, so a failure older than that belongs to an earlier press.
+    ZQ.state.transientFailure = null;
+
+    ZQ.onTransientFailure = function onTransientFailure(msg) {
+        ZQ.state.transientFailure = { at: Date.now(), msg: msg };
+        ZQ.trace('server-transient', { msg: msg, state: ZQ.pageState() }, true);
+    };
+
     // The hook is optional: a sandbox without DOM event support (the unit tests build one) keeps
     // the rest of the module working, and the shim's announcement is simply unheard there.
     if (typeof window.addEventListener === 'function') {
@@ -690,6 +736,11 @@
                 bytes: data.length,
                 body: data
             });
+
+            // The one reply this module acts on. Every other frame is evidence for the trail and for
+            // the page's own rendering.
+            const transient = ZQ.readTransientFailure(data);
+            if (transient) ZQ.onTransientFailure(transient);
         });
 
         // And what was asked, whole.

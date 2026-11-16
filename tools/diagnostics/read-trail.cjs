@@ -15,20 +15,63 @@ const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 const { edgeStoreDir } = require('../machine.cjs');
 const STORE = edgeStoreDir(EXT_ID);
 
-// Scans every record for a JSON payload that carries the trail key. A partial match is normal: records
-// are appended, so the newest version of the trail is the last one that parses.
-function readRecords(dir) {
-    if (!fs.existsSync(dir)) return [];
+// A record header is crc32(4) | length(2) | type(1). Type 1 is a whole value; a value too large for
+// one block arrives as type 2 (first), any number of type 3 (middle), then type 4 (last).
+//
+// Reading each fragment as a record is how this tool came to print nothing: the trail had grown past
+// a block, so the write that held the whole of it was split, the key "zqTrail" appeared only in the
+// first fragment, and every fragment on its own was a prefix of the JSON. A run that was recorded in
+// full read back as "tab partial" with no events at all.
+function readLogValues(file) {
+    const buf = fs.readFileSync(file);
+    const values = [];
+    let pending = null;
+    let offset = 0;
 
+    while (offset + 7 <= buf.length) {
+        const length = buf.readUInt16LE(offset + 4);
+        const type = buf[offset + 6];
+
+        if (length === 0 || offset + 7 + length > buf.length || type < 1 || type > 4) {
+            offset += 1;
+            continue;
+        }
+
+        const fragment = buf.slice(offset + 7, offset + 7 + length);
+
+        if (type === 1) {
+            pending = null;
+            values.push(fragment);
+        } else if (type === 2) {
+            pending = [fragment];
+        } else if (type === 3) {
+            if (pending) pending.push(fragment);
+        } else if (pending) {
+            pending.push(fragment);
+            values.push(Buffer.concat(pending));
+            pending = null;
+        }
+
+        offset += 7 + length;
+    }
+
+    return values;
+}
+
+// The tables are compressed blocks, so walking them the same way only recovers literal runs - enough
+// to find a trail that survived compaction, never enough to parse one. Kept for that: the log only
+// holds what has been written since the last compaction.
+function readStorePayloads(dir) {
     const found = [];
+
+    if (!fs.existsSync(dir)) return found;
+
     for (const name of fs.readdirSync(dir)) {
-        if (!/\.(log|ldb)$/.test(name)) continue;
+        if (!/\.ldb$/.test(name)) continue;
 
         const buf = fs.readFileSync(path.join(dir, name));
-
-        // Walk the append log. A record header is crc32(4) | length(2) | type(1), and only type 1
-        // carries a user payload; the rest are compaction bookkeeping.
         let offset = 0;
+
         while (offset + 7 <= buf.length) {
             const length = buf.readUInt16LE(offset + 4);
             const type = buf[offset + 6];
@@ -137,30 +180,60 @@ function salvageEvents(text) {
     return { partial: true, events };
 }
 
-const records = readRecords(STORE);
-if (records.length === 0) {
+const values = [];
+if (fs.existsSync(STORE)) {
+    for (const name of fs.readdirSync(STORE).filter(entry => /\.log$/.test(entry)).sort()) {
+        values.push(...readLogValues(path.join(STORE, name)));
+    }
+}
+const payloads = readStorePayloads(STORE);
+
+if (values.length === 0 && payloads.length === 0) {
     console.log('No trail in storage yet.');
     console.log('The trail is written by the content script, so it appears after a page load runs the');
     console.log('current build. Reload the extension and open the detection page once.');
     process.exit(0);
 }
 
-// The last record that parses is the newest trail.
+// Complete values first, in the order they were written, so the last one that parses is the newest
+// trail. The table scan is the fallback: a compressed block gives a prefix at best, which is only
+// worth printing when nothing else parses.
 let newest = null;
-for (const payload of records) {
-    const parsed = extractTrails(payload);
+for (const text of values) {
+    const parsed = extractTrails(text.toString('utf8'));
+    if (parsed) newest = parsed;
+}
+for (const text of payloads) {
+    const parsed = extractTrails(text);
     if (parsed) newest = parsed;
 }
 
 if (!newest) {
     console.log('Found trail records but none parsed. Raw tail of the newest one:');
-    console.log(records[records.length - 1].slice(0, 600));
+    console.log(String(payloads[payloads.length - 1] || '').slice(0, 600));
     process.exit(0);
 }
 
-for (const [tabId, run] of Object.entries(newest)) {
+// The trail stores UTC. Reading it back that way produced clocks that did not match the wall and
+// made every before/after comparison in a debugging session unreliable, so the local clock is what
+// is printed here.
+function localClock(iso) {
+    const at = Date.parse(iso);
+    if (!Number.isFinite(at)) return String(iso);
+
+    const date = new Date(at);
+    return date.toLocaleTimeString('en-GB', { hour12: false }) + '.' +
+        String(date.getMilliseconds()).padStart(3, '0');
+}
+
+// A salvaged trail has no tab keys - the record it came from was cut - so it is printed as the one
+// run it is instead of listing "partial" and "events" as though they were tabs.
+const runs = newest.partial ? [['unknown', newest]] : Object.entries(newest);
+
+for (const [tabId, run] of runs) {
     console.log('');
-    console.log('=== tab ' + tabId + ' (load began ' + (run.startedAt || 'unknown') + ') ===');
+    console.log('=== tab ' + tabId + ' (load began ' +
+        (run.startedAt ? localClock(run.startedAt) : 'unknown') + ') ===');
 
     let previous = null;
     for (const event of run.events || []) {
@@ -173,7 +246,7 @@ for (const [tabId, run] of Object.entries(newest)) {
             : ' ' + JSON.stringify(event.detail);
 
         console.log(
-            String(event.t).slice(11, 23).padEnd(13) +
+            localClock(event.t).padEnd(13) +
             String(gap).padStart(9) + '  ' +
             String(event.name).padEnd(22) + detail);
 

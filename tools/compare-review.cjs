@@ -363,8 +363,8 @@ const PROPOSALS = [
         file: 'src/content/auto.js',
         topic: 'a press is an attempt, not a finished detection',
         verdict: 'extended',
-        claim: 'The old record stored the text itself, which claimed a detection that had only been a click. It now stores what was observed: submitted-unconfirmed, quota-decrement-observed, blocked, or unknown, with the quota snapshot taken at the press. None of those states allows an automatic re-press. A later round renamed completed to quota-decrement-observed, because a counter drop cannot be attributed to this request.',
-        probe: { must: [/submitted-unconfirmed/, /attemptState/, /q: currentQuota\(\)/] }
+        claim: 'The old record stored the text itself, which claimed a detection that had only been a click. It now stores what was observed: submitted-unconfirmed, quota-decrement-observed, blocked, or unknown, with the quota snapshot taken at the press. None of those states allows an automatic re-press. A later round renamed completed to quota-decrement-observed, because a counter drop cannot be attributed to this request. One state was added after that: retryable, for the server answering "Exception Occured!" after it had already accepted the request. It is the only state that permits a second ask, it is bounded by the attempt count in the record, and it is read off the reply frame rather than off the page.',
+        probe: { must: [/submitted-unconfirmed/, /attemptState/, /q: currentQuota\(\)/, /retryable/] }
     },
     {
         id: 'P1-5',
