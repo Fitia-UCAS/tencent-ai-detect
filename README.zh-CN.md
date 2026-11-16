@@ -1,6 +1,6 @@
-# 朱雀检测无限使用插件
+# 腾讯朱雀检测无限使用插件
 
-朱雀检测无限使用插件，用于 <https://matrix.tencent.com/ai-detect/>。
+腾讯朱雀检测无限使用插件，用于 <https://matrix.tencent.com/ai-detect/>。
 
 [English](README.md)
 
