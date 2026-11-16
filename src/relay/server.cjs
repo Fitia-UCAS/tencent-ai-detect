@@ -15,7 +15,7 @@ const crypto = require('node:crypto');
 const http = require('node:http');
 const net = require('node:net');
 const tls = require('node:tls');
-const { resolveIdleTimeout, resolveProxy, describeProxy } = require('./config.cjs');
+const { resolveIdleTimeout, describeProxy, createProxyWatcher } = require('./config.cjs');
 const { openTunnel } = require('./proxy-tunnel.cjs');
 const { createFrameQueue } = require('./frame-queue.cjs');
 
@@ -254,13 +254,21 @@ function createReassembler(limit = MAX_MESSAGE_BYTES) {
 
 // --- upstream connection ---------------------------------------------------
 
-// The outbound path, resolved once at startup from the system proxy switch. See resolveProxy() in
-// config.cjs for why the relay has to follow it.
-const PROXY = resolveProxy();
+// The outbound path, re-read while the relay lives. See createProxyWatcher() in config.cjs for why a
+// path captured at startup is not good enough: the proxy is a toggle, and a flip leaves the page and
+// this socket on different paths, which the server refuses as "Invalid request".
+const outbound = createProxyWatcher({
+    onChange: (next, before) => {
+        process.stdout.write(
+            `outbound changed ${describeProxy(before)} -> ${describeProxy(next)}` +
+            ` (${describeProxy(next) === 'direct' ? 'the page may still be using the proxy' : 'the page may still be direct'})\n`);
+    }
+});
 
 // Dials the upstream: straight to the host, or through the proxy's CONNECT tunnel when one is on.
 function dialUpstream() {
-    if (PROXY) return openTunnel(PROXY, `${HOST}:443`);
+    const proxy = outbound.current();
+    if (proxy) return openTunnel(proxy, `${HOST}:443`);
 
     return new Promise((resolve, reject) => {
         const socket = net.connect(443, HOST);
@@ -768,8 +776,10 @@ server.listen(PORT, '127.0.0.1', () => {
     // The outbound path is named, not implied. With a proxy on, the page and the detection socket can
     // leave from different addresses, and the server answers "Invalid request" without saying which
     // of the two it saw. Naming it here is what makes that condition readable in the relay log on any
-    // platform, without widening what the unauthenticated /health endpoint returns.
-    process.stdout.write(`relay listening on http://127.0.0.1:${PORT} (outbound ${describeProxy(PROXY)})\n`);
+    // platform, without widening what the unauthenticated /health endpoint returns - and naming it
+    // again from `outbound` when the switch is flipped is what makes a flip visible instead of silent.
+    process.stdout.write(
+        `relay listening on http://127.0.0.1:${PORT} (outbound ${describeProxy(outbound.current())})\n`);
 });
 
 // Exit on its own once nobody has asked for health for a while. Disabled with

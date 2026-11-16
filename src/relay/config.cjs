@@ -159,6 +159,50 @@ function describeProxy(proxy) {
     return proxy ? `${proxy.host}:${proxy.port}` : 'direct';
 }
 
+// How long a resolved path is trusted before the switch is read again.
+const PROXY_RECHECK_MS = 5000;
+
+// The path the relay should take, re-read while it runs.
+//
+// A proxy client is a toggle the user flips, and flipping it changes the path the page takes at once:
+// the browser re-reads the system switch for every request, while this process used to read it once,
+// at startup. Turn the proxy on and the page starts leaving through it while the socket kept leaving
+// directly - two addresses for one ticket, which the server refuses as "Invalid request" - and turn it
+// off and the relay keeps tunnelling into a port nobody is listening on. Whether the relay happened to
+// start before or after the flip then decides whether a detection works, which is what made this look
+// like an intermittent fault.
+//
+// The recheck is throttled rather than per connection because reading the switch spawns a process on
+// Windows, and because a proxy client that is being switched is not a sub-second event.
+function createProxyWatcher({
+    resolve = () => resolveProxy(),
+    ttlMs = PROXY_RECHECK_MS,
+    now = () => Date.now(),
+    onChange = () => {}
+} = {}) {
+    let resolved;
+    let checkedAt = 0;
+
+    return {
+        current() {
+            const at = now();
+            if (resolved !== undefined && at - checkedAt < ttlMs) return resolved;
+
+            const next = resolve();
+            checkedAt = at;
+
+            const first = resolved === undefined;
+            const before = resolved;
+            resolved = next;
+
+            // The first answer is not a change: the startup line already carries it.
+            if (!first && describeProxy(before) !== describeProxy(next)) onChange(next, before);
+
+            return resolved;
+        }
+    };
+}
+
 module.exports = {
     resolveIdleTimeout,
     resolveProxy,
@@ -167,5 +211,7 @@ module.exports = {
     readWindowsProxy,
     readMacProxy,
     describeProxy,
+    createProxyWatcher,
+    PROXY_RECHECK_MS,
     WINDOWS_INTERNET_SETTINGS
 };

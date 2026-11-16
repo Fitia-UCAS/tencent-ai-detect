@@ -7,6 +7,8 @@
 // therefore follows the proxy - and how it finds out has to work on a machine that is not the one
 // this was written on, which is why the standard environment variables come first.
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
     resolveIdleTimeout,
     resolveProxy,
@@ -14,7 +16,8 @@ const {
     proxyFromEnvironment,
     readWindowsProxy,
     readMacProxy,
-    describeProxy
+    describeProxy,
+    createProxyWatcher
 } = require('../../src/relay/config.cjs');
 
 const checks = [];
@@ -167,6 +170,91 @@ check('a platform that cannot answer resolves to direct', () => {
 check('the outbound path is named in the startup line, so a mismatch can be seen', () => {
     assert.equal(describeProxy({ host: '127.0.0.1', port: 7897 }), '127.0.0.1:7897');
     assert.equal(describeProxy(null), 'direct');
+});
+
+// --- the path is re-read while the relay runs ----------------------------
+
+// The page re-reads the system switch for every request; a relay that reads it once keeps the path it
+// started with, so flipping the proxy leaves one half on the proxy and the other direct - the pair of
+// addresses the server refuses as "Invalid request", with nothing in either log saying so.
+check('a flipped switch is picked up without restarting the relay', () => {
+    let answer = { host: '127.0.0.1', port: 7897 };
+    let clock = 1000;
+
+    const outbound = createProxyWatcher({
+        resolve: () => answer,
+        now: () => clock,
+        ttlMs: 5000
+    });
+
+    assert.deepEqual(outbound.current(), { host: '127.0.0.1', port: 7897 });
+
+    // Clash switched off: the browser stops using it immediately.
+    answer = null;
+    clock += 5000;
+    assert.equal(outbound.current(), null, 'the relay must follow the switch, not its startup path');
+
+    answer = { host: '127.0.0.1', port: 7899 };
+    clock += 5000;
+    assert.deepEqual(outbound.current(), { host: '127.0.0.1', port: 7899 },
+        'a different proxy address is followed too');
+});
+
+check('the switch is not re-read for every connection', () => {
+    let reads = 0;
+    let clock = 1000;
+
+    const outbound = createProxyWatcher({
+        resolve: () => { reads += 1; return null; },
+        now: () => clock,
+        ttlMs: 5000
+    });
+
+    for (let i = 0; i < 20; i += 1) {
+        clock += 100;
+        outbound.current();
+    }
+
+    // Reading the switch spawns a process on Windows, which must not happen per frame.
+    assert.ok(reads <= 2, 'expected the answer to be reused within the window, read ' + reads + ' times');
+});
+
+check('a change is reported once, with both ends', () => {
+    const changes = [];
+    let answer = { host: '127.0.0.1', port: 7897 };
+    let clock = 1000;
+
+    const outbound = createProxyWatcher({
+        resolve: () => answer,
+        now: () => clock,
+        ttlMs: 5000,
+        onChange: (next, before) => changes.push([describeProxy(before), describeProxy(next)])
+    });
+
+    outbound.current();
+    assert.equal(changes.length, 0, 'the first answer is the startup line, not a change');
+
+    answer = null;
+    clock += 5000;
+    outbound.current();
+    outbound.current();
+    assert.deepEqual(changes, [['127.0.0.1:7897', 'direct']],
+        'one line per change, so the log stays readable');
+});
+
+// The watcher is only worth having if the relay asks it. Pinned at the source, because the relay is a
+// script rather than a module: reintroducing a module-level constant would silently restore the
+// startup-only behaviour that this whole section exists to remove.
+check('the relay reads the switch when it dials, not when it starts', () => {
+    const relay = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'relay', 'server.cjs'), 'utf8');
+
+    assert.doesNotMatch(relay, /^const PROXY = resolveProxy\(\);/m,
+        'a path resolved at module load is the defect this watcher removes');
+
+    const dialAt = relay.indexOf('function dialUpstream');
+    assert.ok(dialAt !== -1, 'the dial must be its own function');
+    assert.match(relay.slice(dialAt, dialAt + 400), /outbound\.current\(\)/,
+        'the dial must ask for the current path');
 });
 
 const failed = checks.filter(ok => !ok).length;
