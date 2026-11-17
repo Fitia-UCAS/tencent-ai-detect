@@ -11,7 +11,7 @@ const BROWSER = resolveBrowser();
 const PORT = 9382;
 const SITE = 'https://matrix.tencent.com/ai-detect/';
 const EXT = path.join(__dirname, '..', '..');
-const OUT = path.join(__dirname, '..', '..', 'tmp-diag');
+const OUT = path.join(__dirname, '..', '..', 'temp', 'diag');
 
 const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
 

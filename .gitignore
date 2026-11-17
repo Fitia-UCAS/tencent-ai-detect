@@ -9,7 +9,7 @@ Thumbs.db
 test-results/
 playwright-report/
 .playwright-profiles/
-tmp-diag/
+temp/
 
 # Packaging output
 release/

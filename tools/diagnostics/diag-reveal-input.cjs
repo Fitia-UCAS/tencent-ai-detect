@@ -8,7 +8,7 @@ const { resolveBrowser } = require('../machine.cjs');
 const BROWSER = resolveBrowser();
 const PORT = 9384;
 const SITE = 'https://matrix.tencent.com/ai-detect/';
-const OUT = require('node:path').join(__dirname, '..', 'tmp-diag');
+const OUT = require('node:path').join(__dirname, '..', '..', 'temp', 'diag');
 
 const { sleep, httpJson, cdp, launch } = require('../browser-harness.cjs');
 

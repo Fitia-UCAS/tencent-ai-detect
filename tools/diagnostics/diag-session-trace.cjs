@@ -261,7 +261,7 @@ async function waitForVueDetectionComponent(page, timeoutMs = 30000) {
             process.stdout.write(`\nDIFFERENT sockets: verification on ${flow.success.label}, text on ${flow.text.label}\n`);
         }
 
-        const out = path.join(__dirname, '..', '..', 'tmp-diag', 'session-trace.txt');
+        const out = path.join(__dirname, '..', '..', 'temp', 'diag', 'session-trace.txt');
         fs.mkdirSync(path.dirname(out), { recursive: true });
         fs.writeFileSync(out, events.join('\n') + '\n');
         process.stdout.write(`\nfull log: ${out}\n`);

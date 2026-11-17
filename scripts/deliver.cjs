@@ -52,7 +52,7 @@ function makeSnapshot(target) {
         '--exclude-dir', '.baseline',
         // Debug output from diagnostics (screenshots, DOM dumps, traces). It changes on every
         // diagnostic run, so shipping it in the snapshot only adds noise for the reviewer.
-        '--exclude-dir', 'tmp-diag',
+        '--exclude-dir', 'temp',
         '--exclude-file', '*.pem',
         '--force'
     ]);

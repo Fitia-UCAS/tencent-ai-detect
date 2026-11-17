@@ -11,7 +11,7 @@ const { resolveBrowser } = require('../machine.cjs');
 
 const EXT = path.resolve(__dirname, '..', '..');
 const PORT = 9493;
-const OUT = path.join(EXT, 'tmp-diag');
+const OUT = path.join(EXT, 'temp', 'diag');
 const BROWSER = resolveBrowser();
 
 const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
