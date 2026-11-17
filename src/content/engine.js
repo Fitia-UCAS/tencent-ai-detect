@@ -185,11 +185,6 @@
                 return;
             }
 
-            // The reload discards the editor's contents, so whatever was pasted is kept first and
-            // put back on the other side. Without this a rotation would silently wipe the text the
-            // user was in the middle of checking.
-            if (typeof ZQ.saveDraft === 'function') ZQ.saveDraft();
-
             // The last thing recorded before the page is gone. Without it the trail ends mid-story
             // and the reload cannot be told apart from the page being closed.
             ZQ.trace('reload', {
@@ -721,17 +716,6 @@
         return reply.msg;
     };
 
-    // Where that failure is remembered. auto.js decides whether the text may be asked for again, and
-    // it owns the record of which text was pressed; this is the observation that record is settled
-    // from. The timestamp is what ties it to one attempt: an attempt records its own time before
-    // clicking, so a failure older than that belongs to an earlier press.
-    ZQ.state.transientFailure = null;
-
-    ZQ.onTransientFailure = function onTransientFailure(msg) {
-        ZQ.state.transientFailure = { at: Date.now(), msg: msg };
-        ZQ.trace('server-transient', { msg: msg, state: ZQ.pageState() }, true);
-    };
-
     // The hook is optional: a sandbox without DOM event support (the unit tests build one) keeps
     // the rest of the module working, and the shim's announcement is simply unheard there.
     if (typeof window.addEventListener === 'function') {
@@ -755,7 +739,7 @@
             // The one reply this module acts on. Every other frame is evidence for the trail and for
             // the page's own rendering.
             const transient = ZQ.readTransientFailure(data);
-            if (transient) ZQ.onTransientFailure(transient);
+            if (transient) ZQ.trace('server-transient', { msg: transient, state: ZQ.pageState() }, true);
         });
 
         // And what was asked, whole.

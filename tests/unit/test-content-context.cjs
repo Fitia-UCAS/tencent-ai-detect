@@ -60,7 +60,7 @@ function boot(options = {}) {
         },
         storage: {
             local: {
-                get(keys, callback) { callback({ autoRefresh: true }); }
+                get(keys, callback) { callback({}); }
             },
             onChanged: {
                 addListener() {}

@@ -16,7 +16,7 @@ const SOURCE = fs.readFileSync(path.join(__dirname, '../../src/content/engine.js
 
 // `relayOk` is what the worker answers to the health probe. `send` records every message so the
 // recovery path can be read from the outside.
-function load({ relayOk = false, enabled = true, alive = true, rotating = false, autoRefresh = true, storage, getFails = false, setFails = false, silentWrite = false, noStorage = false } = {}) {
+function load({ relayOk = false, enabled = true, alive = true, rotating = false, storage, getFails = false, setFails = false, silentWrite = false, noStorage = false } = {}) {
     // The reload budget lives in extension storage, so a test that spans a reload shares this map.
     // The page's own localStorage is present but deliberately irrelevant: the page owns it, so it
     // must not be able to influence the budget either way.
@@ -30,10 +30,10 @@ function load({ relayOk = false, enabled = true, alive = true, rotating = false,
     let nextTimer = 1;
 
     const ZQ = {
-        state: { enabled, autoRefresh, rotating, contextAlive: alive, retryTimer: null },
+        state: { enabled, rotating, contextAlive: alive, retryTimer: null },
         isAlive: () => ZQ.state.contextAlive,
         isEnabled: () => ZQ.isAlive() && ZQ.state.enabled,
-        canAutoAct: () => ZQ.isEnabled() && ZQ.state.autoRefresh,
+        canAutoAct: () => ZQ.isEnabled(),
         canRotate: () => ZQ.canAutoAct() && !ZQ.state.rotating,
 
         // Constants the real module reads.
@@ -389,33 +389,12 @@ check('a rotation already in flight owns the recovery', async () => {
     assert.deepEqual(page.statuses(), []);
 });
 
-// --- auto refresh as the switch for every self-started reload -----------------
-
-check('auto refresh off suppresses a rotation instead of reloading', async () => {
-    const page = load({ relayOk: true, autoRefresh: false });
-    await page.ZQ.rotate('quota');
-
-    assert.equal(page.reloads.length, 0, 'no reload may happen with auto refresh off');
-    assert.deepEqual(page.statuses(), ['rotation-suppressed'],
-        'the panel must be told the reload was suppressed, not that nothing happened');
-});
-
-check('auto refresh off suppresses the rotate-now control too', async () => {
-    // The switch is the whole switch: nothing on this page reloads while it is off, including a
-    // request from the person watching. Reloading there anyway would be the auto behaviour coming
-    // back through a side door.
-    const page = load({ relayOk: true, autoRefresh: false });
-    page.ZQ.forceRotate('manual');
-
-    assert.equal(page.reloads.length, 0, 'a manual request must not reload either');
-});
-
 check('a manual request does not blank the rotation stamp', async () => {
     // `lastRotationAt` records when the address last actually changed, and the quota cooldown reads
     // it from storage to decide how soon another swap is allowed. Expressing "the person asked" by
     // zeroing it defeated that cooldown for every later page load - and rotate() has early exits
     // that never write a new stamp, so the zero could outlive the attempt that caused it.
-    const page = load({ relayOk: true, autoRefresh: true });
+    const page = load({ relayOk: true });
     page.ZQ.forceRotate('manual');
     await page.settle();
 
@@ -426,8 +405,8 @@ check('a manual request does not blank the rotation stamp', async () => {
     assert.deepEqual(blanked, [], 'no manual path may write lastRotationAt');
 });
 
-check('auto refresh on rotates as before', async () => {
-    const page = load({ relayOk: true, autoRefresh: true });
+check('a spent rotation reloads the page', async () => {
+    const page = load({ relayOk: true });
     await page.ZQ.rotate('quota');
 
     page.fireTimers();

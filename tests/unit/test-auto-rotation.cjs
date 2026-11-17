@@ -73,7 +73,6 @@ function load(bodyText, files = FILES, options = {}) {
                     get(keys, callback) {
                         if (typeof callback !== 'function') return;
                         callback({
-                            autoRefresh: true,
                             spentMode,
                             // Zero is the interesting answer here, so it must survive as zero rather
                             // than being read as "absent" and replaced by the default.

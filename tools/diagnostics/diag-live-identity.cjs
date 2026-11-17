@@ -82,7 +82,6 @@ async function findWorker() {
                 pageState: typeof window.__zq.pageState === 'function' ? window.__zq.pageState() : null,
                 quota: typeof window.__zq.readQuota === 'function' ? window.__zq.readQuota() : null,
                 spent: typeof window.__zq.identitySpent === 'function' ? window.__zq.identitySpent() : 'NO identitySpent',
-                autoRefresh: window.__zq.state.autoRefresh,
                 enabled: window.__zq.state.enabled
             })`,
             returnByValue: true

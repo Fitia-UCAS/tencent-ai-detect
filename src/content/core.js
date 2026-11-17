@@ -23,7 +23,6 @@
 
     ZQ.state = {
         enabled: true,
-        autoRefresh: true,
         // 'manual' | 'press' | 'delay'. The panel owns this; see ZQ.readSpentMode.
         spentMode: 'manual',
         // Only used by 'delay'. Seconds, because that is what the panel shows. Zero is a legal value
@@ -55,7 +54,10 @@
     // what let the mutation observers act on a page whose reload switch was off.
     ZQ.isAlive = () => ZQ.state.contextAlive;
     ZQ.isEnabled = () => ZQ.isAlive() && ZQ.state.enabled;
-    ZQ.canAutoAct = () => ZQ.isEnabled() && ZQ.state.autoRefresh;
+    // The rotation is what the three spent-address modes act through; it no longer depends on a
+    // hidden "refresh" switch. An automatic detection click used to share this predicate, and with
+    // it gone the only question left is whether this context may act at all.
+    ZQ.canAutoAct = () => ZQ.isEnabled();
     ZQ.canRotate = () => ZQ.canAutoAct() && !ZQ.state.rotating;
 
     // How long this document has existed, measured from its own navigation start. Distinct from
@@ -147,13 +149,7 @@
     }
 
     ZQ.recoverFromStaleContext = function recoverFromStaleContext() {
-        // The draft survives the reload through the same path a rotation uses, so an automatic
-        // refresh does not cost the text the user pasted.
-        const kept = typeof ZQ.saveDraft === 'function' ? ZQ.saveDraft() : false;
-
-        showStaleNotice(kept
-            ? 'Extension was reloaded. Refreshing this page to reconnect, your text is kept.'
-            : 'Extension was reloaded. Refreshing this page to reconnect.');
+        showStaleNotice('Extension was reloaded. Refreshing this page to reconnect.');
 
         setTimeout(() => {
             if (reloadOnceForStaleContext()) return;

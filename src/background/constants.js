@@ -11,7 +11,6 @@ export const HEALTH_TIMEOUT_MS = 1500;
 // Storage keys written by the worker. The content script writes none of these.
 export const KEYS = Object.freeze({
     relayOnline: 'relayOnline',
-    autoRefresh: 'autoRefresh',
     resetCount: 'resetCount',
     resetHistory: 'resetHistory',
     lastResetTime: 'lastResetTime',
@@ -31,7 +30,6 @@ export const KEYS = Object.freeze({
 
 // Seeded on install only when absent, so an update never resets a user's switches.
 export const DEFAULTS = Object.freeze({
-    autoRefresh: true,
     resetCount: 0,
     ipUsageCount: 0,
     resetHistory: [],

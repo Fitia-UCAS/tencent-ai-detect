@@ -181,9 +181,6 @@
                     sendResponse({ status: 'success' });
                 } else if (request.action === 'getStatus') {
                     sendResponse(ZQ.currentState(ZQ.pageState()));
-                } else if (request.action === 'autoRefresh') {
-                    ZQ.state.autoRefresh = request.enabled;
-                    sendResponse({ status: 'success' });
                 } else if (request.action === 'rotateNow') {
                     // A press that cannot be served is the one case where swapping the address is
                     // what the user asked for, so this bypasses the spent-address hold rather than
@@ -220,13 +217,12 @@
         };
     }
 
-    // The panel writes autoRefresh to storage; without reading it here the switch would flip in
-    // the UI while this script kept reloading anyway.
+    // The three spent-address modes are the whole policy. There is no hidden refresh switch: the
+    // automatic detect click that used to read one is gone, and the rotation these settings drive
+    // must keep working without it.
     function readSettings() {
         try {
-            chrome.storage.local.get(['autoRefresh', 'spentMode', 'spentDelaySeconds'], stored => {
-                ZQ.state.autoRefresh = stored.autoRefresh !== false;
-
+            chrome.storage.local.get(['spentMode', 'spentDelaySeconds'], stored => {
                 const spent = resolveSpentSettings(stored);
                 ZQ.state.spentMode = spent.spentMode;
                 ZQ.state.spentDelaySeconds = spent.spentDelaySeconds;
@@ -252,17 +248,6 @@
                     });
                     ZQ.state.spentDelaySeconds = spent.spentDelaySeconds;
                 }
-
-                if (!changes.autoRefresh) return;
-
-                ZQ.state.autoRefresh = changes.autoRefresh.newValue !== false;
-
-                // Turning it off must also cancel a reload that is already scheduled.
-                if (!ZQ.state.autoRefresh && ZQ.state.retryTimer) {
-                    clearTimeout(ZQ.state.retryTimer);
-                    ZQ.state.retryTimer = null;
-                    ZQ.writeState({ backoffUntil: 0 });
-                }
             });
         } catch (error) {
             ZQ.noteContextError(error);
@@ -285,7 +270,6 @@
         identity,
         pageState: typeof ZQ.pageState === 'function' ? ZQ.pageState() : null,
         quota: typeof ZQ.readQuota === 'function' ? ZQ.readQuota() : null,
-        autoRefresh: ZQ.state.autoRefresh,
         readyState: (function () {
             try {
                 return document.readyState;
@@ -301,11 +285,6 @@
     // Ask on a timer as well, so a page that is already exhausted and then sits still still
     // rotates without the user clicking anything.
     if (typeof ZQ.startWatchdog === 'function') ZQ.startWatchdog();
-
-    // And drive the detection itself: the watchdog only keeps the allowance fresh, which is useless
-    // if nothing ever asks for a detection. This is what makes the extension hands-off - paste once
-    // and it runs, rotates, restores the text and runs again.
-    if (typeof ZQ.startAuto === 'function') ZQ.startAuto();
 
     // A fresh load runs on whatever address the background already installed; report it so the
     // panel shows the live value instead of a stale one.

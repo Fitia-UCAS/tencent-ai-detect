@@ -27,9 +27,10 @@ const EXT = process.env.ZQ_EXT_DIR
     ? path.resolve(process.env.ZQ_EXT_DIR)
     : path.join(__dirname, '..', '..');
 const PORT = 9491;
-// The detector is a route, not the site root: the root renders the home page, whose buttons make a
-// "the app is up" readiness check pass while there is no textarea to fill.
-const SITE = 'https://matrix.tencent.com/ai-detect/ai_gen_txt';
+// The root is the detector page the user actually opens; the /ai_gen_txt route sometimes renders
+// its own layout without the editor. Readiness waits for the Element Plus textarea by class, which
+// is also what diag-captcha-probe uses.
+const SITE = 'https://matrix.tencent.com/ai-detect/';
 const WITH_PROXY = process.argv.includes('--proxy');
 const HEADLESS = process.argv.includes('--headless');
 // Manual mode leaves the press and the challenge to the person at the keyboard. The captcha type
@@ -44,6 +45,19 @@ const OFFSCREEN = process.argv.includes('--offscreen');
 // Puts the identity on the tab through CDP instead of the relay, so the WebSocket is the browser's
 // own. It is the test for whether the relay's transport is what the server refuses.
 const CDP_XFF = process.argv.includes('--cdp-xff');
+
+// Matrix mode: which side of the exchange carries the synthetic address. 'both' is the extension's
+// normal configuration, 'socket' keeps the captcha real, 'captcha' keeps the socket real, and 'none'
+// is the no-address baseline. One variable at a time is the only way to tell which side the server
+// actually compares.
+const MODE_ARG = process.argv.find(arg => arg.startsWith('--xff-mode='));
+const XFF_MODE = MODE_ARG
+    ? MODE_ARG.slice('--xff-mode='.length)
+    : (CDP_XFF ? 'both' : 'none');
+const FIXED_XFF = '112.80.10.10';
+// Keep the window open after the first exchange so a slider can actually be finished.
+const HOLD = process.argv.includes('--hold');
+
 const WATCH_MS = 45000;
 
 const CAPTURE = /cap_union|prehandle|verify|ticket|captcha\.gtimg|t\.captcha\.qq\.com/i;
@@ -120,14 +134,14 @@ function capFields(body) {
     // the captcha request and the socket then carry it.
     const session = await launch({
         browser: BROWSER, port: PORT, prefix: 'zqmint', args,
-        url: CDP_XFF ? 'about:blank' : SITE
+        url: XFF_MODE === 'none' ? SITE : 'about:blank'
     });
 
     try {
         let page = null;
         for (let i = 0; i < 40 && !page; i += 1) {
             const targets = await httpJson(PORT, '/json/list');
-            page = (targets || []).find(t => CDP_XFF
+            page = (targets || []).find(t => XFF_MODE !== 'none'
                 ? t.type === 'page'
                 : (t.url || '').includes('matrix.tencent.com'));
             if (!page) await sleep(300);
@@ -209,6 +223,21 @@ function capFields(body) {
                 return;
             }
 
+            if (msg.method === 'Network.webSocketHandshakeResponseReceived') {
+                if (XFF_MODE === 'socket') {
+                    conn.send('Network.setExtraHTTPHeaders', { headers: {} })
+                        .then(() => process.stdout.write('  socket handshake done; tab header cleared\n'))
+                        .catch(() => {});
+                }
+                if (XFF_MODE === 'captcha') {
+                    conn.send('Network.setExtraHTTPHeaders', {
+                        headers: { 'X-Forwarded-For': FIXED_XFF }
+                    })
+                        .then(() => process.stdout.write('  socket handshake done; tab header set for captcha\n'))
+                        .catch(() => {});
+                }
+            }
+
             if (msg.method === 'Network.webSocketWillSendHandshakeRequest') {
                 const headers = msg.params.request && msg.params.request.headers;
                 process.stdout.write('  WS HANDSHAKE ' + JSON.stringify(headers) + '\n');
@@ -228,10 +257,12 @@ function capFields(body) {
         await conn.send('Page.enable');
         await conn.send('Runtime.enable');
 
-        if (CDP_XFF) {
+        if (XFF_MODE === 'both' || XFF_MODE === 'socket') {
             await conn.send('Network.setExtraHTTPHeaders', {
-                headers: { 'X-Forwarded-For': '112.80.10.10' }
+                headers: { 'X-Forwarded-For': FIXED_XFF }
             });
+        }
+        if (XFF_MODE !== 'none') {
             await conn.send('Page.navigate', { url: SITE });
         }
 
@@ -239,13 +270,16 @@ function capFields(body) {
         let ready = false;
         for (let i = 0; i < 40 && !ready; i += 1) {
             const probe = await conn.send('Runtime.evaluate', {
-                expression: `!!(document.querySelector('.txt-input textarea') || document.querySelector('textarea'))`,
+                expression: `!!document.querySelector('textarea.el-textarea__inner, .txt-input textarea, textarea')`,
                 returnByValue: true
             });
             ready = Boolean(probe.result && probe.result.value);
             if (!ready) await sleep(500);
         }
-        if (!ready) throw new Error('detector textarea never appeared at ' + SITE);
+        if (!ready) {
+            if (!MANUAL) throw new Error('detector textarea never appeared at ' + SITE);
+            process.stdout.write('manual: no textarea seen yet; the page is still usable\n');
+        }
 
         await conn.send('Runtime.evaluate', {
             expression: `(() => {
@@ -271,15 +305,7 @@ function capFields(body) {
         });
         process.stdout.write(`page identity: ${identity.result ? identity.result.value : '?'}\n`);
 
-        if (CDP_XFF) {
-            let ip = CDP_XFF ? '112.80.10.10' : null;
-            if (ip) {
-                await conn.send('Network.setExtraHTTPHeaders', { headers: { 'X-Forwarded-For': ip } });
-                process.stdout.write(`cdp header set: X-Forwarded-For ${ip}\n`);
-            } else {
-                process.stdout.write('cdp header: no identity to set\n');
-            }
-        }
+        process.stdout.write(`xff mode: ${XFF_MODE}\n`);
 
         if (MANUAL) {
             process.stdout.write('manual: paste text in the window, press the detect button, and solve the challenge\n');
@@ -288,7 +314,7 @@ function capFields(body) {
             // v-model sees the change.
             const typed = await conn.send('Runtime.evaluate', {
                 expression: `(() => {
-                    const ta = document.querySelector('.txt-input textarea') || document.querySelector('textarea');
+                    const ta = document.querySelector('textarea.el-textarea__inner, .txt-input textarea, textarea');
                     if (!ta) return 'no textarea';
                     const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
                     setter.call(ta, ('这是一段用于检测的中文文本，用来观察验证码票据的签发过程。'.repeat(12)) + Date.now());
@@ -321,7 +347,7 @@ function capFields(body) {
             process.stdout.write('detect pressed; watching captcha and socket\n');
         }
 
-        const deadline = Date.now() + (MANUAL ? 600000 : WATCH_MS);
+        const deadline = Date.now() + (MANUAL || HOLD ? 180000 : WATCH_MS);
         while (Date.now() < deadline) {
             await sleep(500);
 
@@ -352,7 +378,7 @@ function capFields(body) {
 
             // In manual mode the first reply may be the captcha's own quick pass, arriving before the
             // person has finished the slider. Closing on it is what made an earlier run end mid-solve.
-            if (ticketSent && ticketReplied && !MANUAL) break;
+            if (ticketSent && ticketReplied && !MANUAL && !HOLD) break;
         }
 
         process.stdout.write('\n--- captcha requests ---\n');
