@@ -52,7 +52,7 @@
         "src/content/detection.js",
         "src/content/snapshot.js",
         "src/content/engine.js",
-        "src/content/auto.js",
+        "src/content/detect-button.js",
         "src/content/index.js"
       ],
       "run_at": "document_start"

@@ -76,27 +76,37 @@
             if (!text.includes('检测') && !text.includes('立即检测') &&
                 !className.includes('detect') && !className.includes('check')) return;
 
-            // Measured: the server reports five detections per address and then zero, so a sixth press
-            // on the same address is refused permanently. The spent address has to be swapped first,
-            // and that swap is a reload - so what happens to this press is the user's setting.
-            if (ZQ.identitySpent()) {
+            // A press on a spent address cannot be served, whichever signal said so: the handshake
+            // count or the page's own quota wording. Asking both is what keeps this guard aligned
+            // with the watchdog, which has always used addressSpent().
+            const spent = typeof ZQ.addressSpent === 'function' ? ZQ.addressSpent() : ZQ.identitySpent();
+            if (spent) {
                 const mode = ZQ.readSpentMode();
 
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+
+                ZQ.trace('press-blocked', {
+                    reason: 'address-exhausted',
+                    uses: ZQ.identityUses(),
+                    mode,
+                    state: ZQ.pageState()
+                });
+
                 // 'press' means exactly this moment: the click that cannot be served is the request
-                // for a new address. 'manual' leaves it to the panel button. Both stop the press. A
-                // zero wait is the one exception, because the page is about to replace itself anyway.
-                if (!ZQ.swapsAtOnce()) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.stopImmediatePropagation();
-
-                    ZQ.trace('press-blocked', { reason: 'identity-exhausted', uses: ZQ.identityUses(), mode });
-
-                    if (mode === 'press') ZQ.forceRotate('identity-exhausted');
-                    else ZQ.reportSpentOnce();
-
-                    return;
+                // for a new address. 'delay' owns the wait, including the zero wait that swaps at
+                // once. 'manual' leaves it to the panel button. None of them may send a request the
+                // spent address cannot serve.
+                if (mode === 'press') {
+                    ZQ.forceRotate('address-exhausted');
+                } else if (mode === 'delay' && typeof ZQ.onAddressSpent === 'function') {
+                    ZQ.onAddressSpent('press');
+                } else {
+                    ZQ.reportSpentOnce();
                 }
+
+                return;
             }
 
             // And the rule that makes the ticket and the socket agree has to be in place before any
@@ -195,32 +205,13 @@
         }
     }
 
-    // Reads the stored answer, whatever shape it was written in.
-    //
-    // 'immediate' was a separate mode before the wait accepted zero, so a profile that still holds it
-    // means "wait zero seconds" - not "fall back to the default", which would silently change what the
-    // user chose. Both values are resolved together because the migration decides one of them: reading
-    // the mode and the wait separately let a stale stored wait overwrite the zero the migration meant.
-    function resolveSpentSettings(stored) {
-        const mode = stored && stored.spentMode;
-        const seconds = Number(stored && stored.spentDelaySeconds);
-        const wait = Number.isFinite(seconds) && seconds >= 0 ? seconds : ZQ.DEFAULT_SPENT_DELAY_SECONDS;
-
-        if (mode === 'immediate') return { spentMode: 'delay', spentDelaySeconds: 0 };
-
-        return {
-            spentMode: ZQ.SPENT_MODES.indexOf(mode) !== -1 ? mode : 'manual',
-            spentDelaySeconds: wait
-        };
-    }
-
     // The three spent-address modes are the whole policy. There is no hidden refresh switch: the
     // automatic detect click that used to read one is gone, and the rotation these settings drive
     // must keep working without it.
     function readSettings() {
         try {
             chrome.storage.local.get(['spentMode', 'spentDelaySeconds'], stored => {
-                const spent = resolveSpentSettings(stored);
+                const spent = ZQ.resolveSpentSettings(stored);
                 ZQ.state.spentMode = spent.spentMode;
                 ZQ.state.spentDelaySeconds = spent.spentDelaySeconds;
             });
@@ -231,7 +222,7 @@
                 // The spent-mode choice takes effect without a reload: the panel is where it is set,
                 // and a setting that only applies to the next page would look broken.
                 if (changes.spentMode) {
-                    const spent = resolveSpentSettings({
+                    const spent = ZQ.resolveSpentSettings({
                         spentMode: changes.spentMode.newValue,
                         spentDelaySeconds: ZQ.state.spentDelaySeconds
                     });
@@ -239,7 +230,7 @@
                 }
 
                 if (changes.spentDelaySeconds) {
-                    const spent = resolveSpentSettings({
+                    const spent = ZQ.resolveSpentSettings({
                         spentMode: ZQ.state.spentMode,
                         spentDelaySeconds: changes.spentDelaySeconds.newValue
                     });

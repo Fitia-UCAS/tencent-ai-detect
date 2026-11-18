@@ -206,7 +206,7 @@ async function waitForRelay(port) {
         check('a wrong origin is still refused', !!badOrigin.refused, badOrigin.refused || 'no refusal');
 
         // A malformed identity must be ignored rather than reaching the upstream header.
-        const malformed = await probe(port, '1.2.3.4%0d%0aX-Injected:%201');
+        const malformed = await probeWithRetry(port, '1.2.3.4%0d%0aX-Injected:%201');
         const malformedAnswer = malformed.frames.join(' ');
         check('a malformed identity is ignored',
             !!malformedAnswer && !/X-Injected/.test(malformedAnswer),

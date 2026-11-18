@@ -26,7 +26,13 @@ const ZQ = {
     // The settings reader resolves the stored mode against these two, so a stub without them would
     // fail on a real call rather than on the thing under test (startup without <html>).
     SPENT_MODES: ['manual', 'press', 'delay'],
-    DEFAULT_SPENT_DELAY_SECONDS: 2
+    DEFAULT_SPENT_DELAY_SECONDS: 2,
+    resolveSpentSettings(stored) {
+        return {
+            spentMode: stored && stored.spentMode ? stored.spentMode : 'manual',
+            spentDelaySeconds: 2
+        };
+    }
 };
 const document = {
     documentElement: null,

@@ -2,7 +2,7 @@
 //
 // Load order matters — core defines the runtime, identity picks this load's address, detection
 // reads the page, snapshot describes the parts of it worth recording, engine performs a rotation,
-// auto.js provides detection.js with the detectButton lookup, and index registers the listeners.
+// detect-button.js provides detection.js with the detectButton lookup, and index registers the listeners.
 // Keep this list, manifest.json and src/background/app.js CONTENT_FILES in step.
 
 export const CONTENT_FILES = [
@@ -11,6 +11,6 @@ export const CONTENT_FILES = [
     'src/content/detection.js',
     'src/content/snapshot.js',
     'src/content/engine.js',
-    'src/content/auto.js',
+    'src/content/detect-button.js',
     'src/content/index.js'
 ];

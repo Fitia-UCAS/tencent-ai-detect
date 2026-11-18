@@ -13,7 +13,7 @@ const vm = require('node:vm');
 // The content layer is seven classic scripts loaded in manifest order; the test loads the same
 // list into one sandbox so the shared namespace is exercised exactly as in the browser.
 const CONTENT_DIR = path.join(__dirname, '..', '..', 'src', 'content');
-const SOURCES = ['core.js', 'identity.js', 'detection.js', 'snapshot.js', 'engine.js', 'auto.js', 'index.js'].map(name => ({
+const SOURCES = ['core.js', 'identity.js', 'detection.js', 'snapshot.js', 'engine.js', 'detect-button.js', 'index.js'].map(name => ({
     name: 'src/content/' + name,
     text: fs.readFileSync(path.join(CONTENT_DIR, name), 'utf8')
 }));
@@ -92,7 +92,7 @@ function boot(options = {}) {
             cookie: '',
             body: { innerText: '' },
             documentElement: {},
-            // detection.js probes for the captcha frame by id, and auto.js locates the detect button.
+            // detection.js probes for the captcha frame by id, and detect-button.js locates the detect button.
             // Without these the content scripts threw during boot, so no check below ever ran.
             getElementById: () => null,
             querySelector: () => null,

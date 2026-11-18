@@ -66,9 +66,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // The chosen cards that carry a setting also open. Measured: a stored zero showed "Swaps at once" in
     // the summary while the sentence explaining why that is the risky setting sat collapsed underneath
     // it - visible to the DOM, invisible to the person choosing.
+    const SPENT_MODES = ['manual', 'press', 'delay'];
     const renderSpentMode = mode => {
+        // An unknown stored value is the content script's `manual`, not "nothing chosen": a panel with
+        // no selected card looks broken while the page is actually keeping the result.
+        const chosenMode = SPENT_MODES.includes(mode) ? mode : 'manual';
         for (const card of spentCards) {
-            const chosen = card.dataset.mode === mode;
+            const chosen = card.dataset.mode === chosenMode;
             card.dataset.selected = String(chosen);
             if (chosen && card.tagName === 'DETAILS') card.open = true;
         }

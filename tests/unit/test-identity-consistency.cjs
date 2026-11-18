@@ -115,13 +115,17 @@ check('the limit is the server allowance, and the press honours the chosen mode'
     assert.match(identity, /ZQ\.USES_PER_IDENTITY = 5;/, 'the measured limit must be stated once');
     assert.match(identity, /ZQ\.identitySpent = function identitySpent\(\) \{[\s\S]{0,200}?USES_PER_IDENTITY/,
         'the limit must be decided from the socket count, in one place');
-    assert.match(contentIndex, /if \(ZQ\.identitySpent\(\)\)/,
-        'and the press must consult it rather than the refusal');
+    assert.match(contentIndex, /const spent = typeof ZQ\.addressSpent === 'function' \? ZQ\.addressSpent\(\) : ZQ\.identitySpent\(\);/,
+        'the press must consult the same spent predicate as the watchdog');
+    assert.match(contentIndex, /if \(spent\) \{/,
+        'and stop on it rather than on the handshake count alone');
 
     // The press used to rotate unconditionally. Now only the 'press' mode does, because the other
     // modes answer this moment differently and rotating regardless would override the setting.
-    assert.match(contentIndex, /if \(mode === 'press'\) ZQ\.forceRotate\('identity-exhausted'\)/,
+    assert.match(contentIndex, /if \(mode === 'press'\) \{\s*\n\s*ZQ\.forceRotate\('address-exhausted'\)/,
         'the press mode is what rotates on the unservable click');
+    assert.match(contentIndex, /else if \(mode === 'delay'[\s\S]{0,100}?ZQ\.onAddressSpent\('press'\)/,
+        'delay, including a zero wait, decides through the one spent-address handler');
     assert.match(contentIndex, /ZQ\.readSpentMode\(\)/, 'decided from the stored preference');
 });
 
@@ -162,7 +166,7 @@ check('one predicate answers "is the address spent", and one place acts on it', 
 // Only the mode that swaps may reach a rotation, and it is paced by the cooldown.
 check('only the swapping mode can rotate, on any path', () => {
     const engine = read('src/content/engine.js');
-    const decide = engine.slice(engine.indexOf('ZQ.onAddressSpent'), engine.indexOf('ZQ.WATCHDOG_MS'));
+    const decide = engine.slice(engine.indexOf('ZQ.onAddressSpent = function'), engine.indexOf('ZQ.WATCHDOG_MS'));
 
     assert.match(decide, /if \(mode === 'delay'\) \{[\s\S]*?ZQ\.forceRotate\('spent'\);/,
         'delay swaps once its wait is over, including a wait of zero');
@@ -311,15 +315,15 @@ check('the relay validator rejects header injection', () => {
 // The panel writes these values, but the reader is what decides what a profile means - including one
 // written by an older build. 'immediate' was a separate mode before the wait accepted zero, so a
 // profile holding it means "wait zero seconds", not "fall back to the default".
-check('a removed mode is read as the zero wait it meant', () => {
-    const source = read('src/content/index.js');
+check('the settings reader normalizes the same way the panel does', () => {
+    const source = read('src/content/engine.js');
     const start = source.indexOf('function resolveSpentSettings');
     assert.ok(start !== -1, 'the settings reader must exist');
 
     const body = source.slice(start, source.indexOf('\n    }', start) + 6)
-        .replace('function resolveSpentSettings', 'function resolveSpentSettings')
         .replace(/ZQ\.DEFAULT_SPENT_DELAY_SECONDS/g, '2')
-        .replace(/ZQ\.SPENT_MODES/g, "['manual', 'press', 'delay']");
+        .replace(/ZQ\.SPENT_MODES/g, "['manual', 'press', 'delay']")
+        .replace(/ZQ\.SPENT_WAIT_MAX_SECONDS/g, '3600');
 
     const resolve = vm.runInNewContext('(' + body + ')', {});
 
@@ -342,6 +346,22 @@ check('a removed mode is read as the zero wait it meant', () => {
     assert.deepEqual(read2(resolve({ spentMode: 'nonsense' })),
         { spentMode: 'manual', spentDelaySeconds: 2 },
         'an unknown mode keeps the page rather than swapping it');
+
+    assert.deepEqual(read2(resolve({ spentMode: 'delay', spentDelaySeconds: 5000 })),
+        { spentMode: 'delay', spentDelaySeconds: 3600 },
+        'a wait above the panel maximum is clamped, not shown one value and run another');
+
+    assert.deepEqual(read2(resolve({ spentMode: 'delay', spentDelaySeconds: 1.234 })),
+        { spentMode: 'delay', spentDelaySeconds: 1.2 },
+        'the wait is rounded to the tenth the panel offers');
+
+    assert.deepEqual(read2(resolve({ spentMode: 'delay', spentDelaySeconds: '' })),
+        { spentMode: 'delay', spentDelaySeconds: 2 },
+        'an emptied field means the default, not an immediate swap');
+
+    assert.deepEqual(read2(resolve({ spentMode: 'delay', spentDelaySeconds: 'abc' })),
+        { spentMode: 'delay', spentDelaySeconds: 2 },
+        'an unreadable wait means the default as well');
 });
 
 const failed = checks.filter(ok => !ok).length;

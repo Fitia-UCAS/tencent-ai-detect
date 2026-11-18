@@ -291,6 +291,16 @@ const marked = app => app.spentCards.filter(card => card.dataset.selected === 't
     assert.ok(!/data-mode="immediate"/.test(html), 'the removed mode must not be offered again');
 }
 
+// 4e. An unrecognized stored mode must look like what the content script will actually do.
+{
+    const app = build({ stored: { spentMode: 'nonsense', spentDelaySeconds: 5 } });
+    check('an unknown stored mode is shown as the manual behavior the page uses', () => {
+        const selected = marked(app);
+        assert.equal(selected.length, 1);
+        assert.equal(selected[0].dataset.mode, 'manual');
+    });
+}
+
 // 5. An empty or absurd entry cannot be stored.
 {
     const app = build({ stored: { spentMode: 'delay' } });

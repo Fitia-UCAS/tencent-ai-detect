@@ -387,13 +387,33 @@
         return usable * 1000;
     };
 
-    // Whether the setting swaps the address the instant the allowance is gone, with nothing waited on.
+    // The stored settings, normalized in one place.
     //
-    // This is the old 'immediate' mode, now expressed as the wait being zero. It is asked wherever the
-    // answer used to be "is the mode 'immediate'?", so there stays one definition of it: a press on a
-    // spent address may pass through only because the page is about to replace itself anyway.
-    ZQ.swapsAtOnce = function swapsAtOnce() {
-        return ZQ.readSpentMode() === 'delay' && ZQ.readSpentDelayMs() === 0;
+    // The panel clamps the wait to tenths and to 0..3600 and treats an empty field as the default;
+    // the content script has to resolve the same stored value the same way, or the panel can show
+    // two seconds while the page waits five thousand. 'immediate' predates the zero wait and is
+    // still read as delay + zero, not as the default.
+    ZQ.SPENT_WAIT_MAX_SECONDS = 3600;
+
+    ZQ.resolveSpentSettings = function resolveSpentSettings(stored) {
+        const mode = stored && stored.spentMode;
+        if (mode === 'immediate') return { spentMode: 'delay', spentDelaySeconds: 0 };
+
+        const raw = stored && stored.spentDelaySeconds;
+        let seconds = ZQ.DEFAULT_SPENT_DELAY_SECONDS;
+
+        if (raw !== '' && raw !== null && raw !== undefined) {
+            const parsed = Number(raw);
+            if (Number.isFinite(parsed)) {
+                seconds = Math.min(ZQ.SPENT_WAIT_MAX_SECONDS,
+                    Math.max(0, Math.round(parsed * 10) / 10));
+            }
+        }
+
+        return {
+            spentMode: ZQ.SPENT_MODES.indexOf(mode) !== -1 ? mode : 'manual',
+            spentDelaySeconds: seconds
+        };
     };
 
     // How long the swap modes have to wait after a rotation before they may swap again.

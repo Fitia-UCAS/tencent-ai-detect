@@ -154,7 +154,7 @@ check('unresolved section only lists proposals that are actually open', () => {
     const entries = [
         { id: 'P1-7', file: 'src/shim/index.js', topic: 'fallback fixed', verdict: 'extended' },
         { id: 'P1-9', file: 'src/background/header-rules.js', topic: 'single-tab limitation', verdict: 'open' },
-        { id: 'P1-11', file: 'src/content/auto.js', topic: 'state label fixed', verdict: 'adopted' }
+        { id: 'P1-11', file: 'src/content/detect-button.js', topic: 'state label fixed', verdict: 'adopted' }
     ];
     const lines = openIssueLines(entries).join('\n');
     assert.match(lines, /1 item\(s\) are agreed but not done/);
