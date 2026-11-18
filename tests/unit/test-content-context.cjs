@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { EventTarget, CustomEvent } = globalThis;
 
 // The content layer is seven classic scripts loaded in manifest order; the test loads the same
 // list into one sandbox so the shared namespace is exercised exactly as in the browser.
@@ -69,6 +70,9 @@ function boot(options = {}) {
         }
     };
 
+    const window = new EventTarget();
+    window.__zqDetectInjected = false;
+
     const sandbox = {
         chrome,
         console,
@@ -88,7 +92,9 @@ function boot(options = {}) {
         setInterval: () => 1,
         clearInterval: () => {},
         location: { reload() { reloads.push(Date.now()); } },
-        window: { __zqDetectInjected: false },
+        window,
+        EventTarget,
+        CustomEvent,
         document: {
             cookie: '',
             body: { innerText: options.bodyText || '' },
@@ -163,6 +169,9 @@ function boot(options = {}) {
         },
         changeStorage(changes, area = 'local') {
             if (typeof storageListener === 'function') storageListener(changes, area);
+        },
+        dispatch(type, detail) {
+            window.dispatchEvent(new CustomEvent(type, { detail }));
         },
         zq: sandbox.window.__zq
     };
@@ -338,7 +347,34 @@ function boot(options = {}) {
     }
 
 
-    // 8. A page can report quota exhaustion before the socket-use counter reaches five.
+    // 8. A withheld no-challenge ticket is a retry prompt, not a click guard. Even if the old
+    // refusal panel is still visible, the next user press must reach the site's handler.
+    {
+        const env = boot({ bodyText: 'Invalid request' });
+        env.dispatch('zq:quick-pass', 170);
+
+        const status = env.messages
+            .filter(message => message.action === 'statusUpdate')
+            .map(message => message.payload)
+            .find(payload => payload && payload.status === 'captcha-incomplete');
+
+        const event = env.click('立即检测');
+
+        if (status && status.message === '验证码未完成，请再按一次检测' &&
+            event.defaultPrevented === false &&
+            event.propagationStopped === false &&
+            event.immediatePropagationStopped === false &&
+            env.messages.some(message => message.action === 'usageIncrement') &&
+            !env.messages.some(message => message.action === 'relayHealth' || message.action === 'logReset') &&
+            env.reloads.length === 0 &&
+            env.zq.state.quickPass === null) {
+            ok('quick-pass state reports the retry prompt and leaves the next detect click unblocked');
+        } else {
+            fail('quick-pass state blocked the recovery click or did not report the retry prompt');
+        }
+    }
+
+    // 9. A page can report quota exhaustion before the socket-use counter reaches five.
     //    The click guard must use addressSpent(), not only identitySpent(), and must stop the
     //    site's handler before it can submit another request.
     {
@@ -356,7 +392,7 @@ function boot(options = {}) {
         }
     }
 
-    // 9. The press mode must turn that blocked click into the explicit press-triggered rotation.
+    // 10. The press mode must turn that blocked click into the explicit press-triggered rotation.
     {
         const env = boot({
             bodyText: '今日次数已用完',
@@ -373,7 +409,7 @@ function boot(options = {}) {
         }
     }
 
-    // 10. Delay mode, including zero, must hand the blocked click to the same spent-address handler.
+    // 11. Delay mode, including zero, must hand the blocked click to the same spent-address handler.
     {
         const env = boot({
             bodyText: '今日次数已用完',
@@ -390,7 +426,7 @@ function boot(options = {}) {
         }
     }
 
-    // 11. A storage change that carries legacy 'immediate' and a stale wait must still resolve to zero.
+    // 12. A storage change that carries legacy 'immediate' and a stale wait must still resolve to zero.
     {
         const env = boot({
             stored: { spentMode: 'delay', spentDelaySeconds: 5 }

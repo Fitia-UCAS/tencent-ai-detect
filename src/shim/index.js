@@ -14,6 +14,10 @@
     const RELAY_URL = 'ws://127.0.0.1:9420/ws';
     const PATTERN = 'ai_gen_txt_server';
 
+    // The site's no-challenge pass is consistently shorter than a solved ticket. It is checked only
+    // on the detection socket, so an unrelated WebSocket carrying a small `ticket` field is untouched.
+    const QUICK_PASS_MAX_TICKET_LENGTH = 200;
+
     // The page's identity for this load, published by src/content/identity.js. Passing it on the
     // socket path is what makes the server see the same address the captcha ticket was issued for;
     // a socket on a different address gets the ticket refused with "Invalid request".
@@ -366,6 +370,30 @@
             // request waiting for a reply the server was never asked for. Guarded by
             // "a stale open handler sending into a connecting socket delivers every send".
             if (!this._sock) return;
+
+            // A no-challenge ticket is known to be unusable with this relay flow. Do not send it:
+            // the page can request another ticket by pressing detect again, on the same page and
+            // address. Parse only the detection socket's JSON frame; malformed or unrelated frames
+            // keep their native send path.
+            if (this._relay && typeof data === 'string') {
+                try {
+                    const frame = JSON.parse(data);
+                    const ticket = frame && typeof frame.ticket === 'string' ? frame.ticket : null;
+
+                    if (ticket && ticket.length < QUICK_PASS_MAX_TICKET_LENGTH) {
+                        try {
+                            window.dispatchEvent(new CustomEvent('zq:quick-pass', {
+                                detail: ticket.length
+                            }));
+                        } catch (e) {
+                            // Reporting must not interfere with the decision not to send the ticket.
+                        }
+                        return;
+                    }
+                } catch (e) {
+                    // Non-JSON frames and malformed JSON are left untouched.
+                }
+            }
 
             // Every outbound frame is recorded whole, because the outbound side is where the question
             // actually is: the server answers code 21 when it rejects the captcha ticket, and the only

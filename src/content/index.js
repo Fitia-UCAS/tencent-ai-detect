@@ -129,6 +129,19 @@
                 return;
             }
 
+            // A withheld no-challenge ticket is a user retry state, not a refusal. The next press is
+            // the recovery action that asks the site for another ticket, so it must be allowed through
+            // even if the old result panel still says "Invalid request". Consume the marker once;
+            // address-spent and identity-unconfirmed guards above still take precedence.
+            const quickPass = ZQ.state.quickPass;
+            if (quickPass) {
+                ZQ.state.quickPass = null;
+                ZQ.trace('quick-pass-retry', {
+                    ticketLength: quickPass.ticketLength,
+                    state: ZQ.pageState()
+                });
+            }
+
             // The page is still showing a refusal from an earlier attempt.
             //
             // Pressing again on that screen sends a request from a session the site has already
@@ -140,7 +153,7 @@
             // Only the ambiguous state is caught here. 'captcha' is left alone: the challenge is the
             // user's to solve and the page handles the press, and a solved challenge sometimes clears
             // without the panel ever going ambiguous.
-            if (ZQ.pageState() === 'ambiguous') {
+            if (ZQ.pageState() === 'ambiguous' && !quickPass) {
                 event.preventDefault();
                 event.stopPropagation();
                 event.stopImmediatePropagation();

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { Event, EventTarget, MessageEvent, DOMException } = globalThis;
+const { Event, EventTarget, MessageEvent, CustomEvent, DOMException } = globalThis;
 
 class TestCloseEvent extends Event {
     constructor(type, init = {}) {
@@ -102,19 +102,21 @@ class FakeWebSocket extends EventTarget {
     }
 }
 
-const window = {
+const window = new EventTarget();
+Object.assign(window, {
     WebSocket: FakeWebSocket,
     EventTarget,
     URL,
     DOMException,
     location: { href: 'https://matrix.tencent.com/ai-detect/' }
-};
+});
 
 const context = vm.createContext({
     window,
     EventTarget,
     Event,
     MessageEvent,
+    CustomEvent,
     CloseEvent: TestCloseEvent,
     DOMException,
     URL,
@@ -235,6 +237,60 @@ test('removeEventListener distinguishes capture registrations', () => {
     native.open();
     native.receive('one');
     assert.equal(calls, 1);
+});
+
+test('a short detection ticket is withheld and announces its length', () => {
+    resetFake();
+    const events = [];
+    window.addEventListener('zq:quick-pass', event => events.push(event.detail));
+
+    const socket = new WebSocketShim(TARGET_URL);
+    const relay = latestSocket();
+    relay.open();
+
+    socket.send(JSON.stringify({ ticket: 'x'.repeat(170) }));
+
+    assert.deepEqual(relay.sent, []);
+    assert.deepEqual(events, [170]);
+});
+
+test('a normal detection ticket is sent and does not announce quick pass', () => {
+    resetFake();
+    const events = [];
+    window.addEventListener('zq:quick-pass', event => events.push(event.detail));
+
+    const socket = new WebSocketShim(TARGET_URL);
+    const relay = latestSocket();
+    relay.open();
+    const frame = JSON.stringify({ ticket: 'x'.repeat(214) });
+
+    socket.send(frame);
+
+    assert.deepEqual(relay.sent, [frame]);
+    assert.deepEqual(events, []);
+});
+
+test('an unrelated WebSocket still sends a short ticket frame', () => {
+    resetFake();
+    const socket = new WebSocketShim('wss://example.com/ordinary');
+    const native = latestSocket();
+    native.open();
+    const frame = JSON.stringify({ ticket: 'x'.repeat(170) });
+
+    socket.send(frame);
+
+    assert.deepEqual(native.sent, [frame]);
+});
+
+test('a malformed detection frame is not swallowed by the quick-pass guard', () => {
+    resetFake();
+    const socket = new WebSocketShim(TARGET_URL);
+    const relay = latestSocket();
+    relay.open();
+
+    socket.send('{not-json');
+
+    assert.deepEqual(relay.sent, ['{not-json']);
 });
 
 test('relay failure is visible and never opens the original endpoint', async () => {

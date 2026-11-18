@@ -730,6 +730,26 @@
     // The hook is optional: a sandbox without DOM event support (the unit tests build one) keeps
     // the rest of the module working, and the shim's announcement is simply unheard there.
     if (typeof window.addEventListener === 'function') {
+        // The shim withholds a no-challenge ticket before it can reach the server. That is not a
+        // server refusal and it is not an address-spent condition: the user simply presses detect
+        // again so the site can mint another ticket. Keep that recovery on this page and on this
+        // address; do not rotate, reload, retry automatically, or touch the spent-address setting.
+        window.addEventListener('zq:quick-pass', event => {
+            const ticketLength = Number(event && event.detail);
+            if (!Number.isInteger(ticketLength) || ticketLength <= 0) return;
+
+            ZQ.state.quickPass = { ticketLength, at: Date.now() };
+
+            ZQ.trace('captcha-quick-pass', {
+                ticketLength,
+                state: ZQ.pageState()
+            }, true);
+
+            const status = ZQ.currentState('captcha-incomplete');
+            status.message = '验证码未完成，请再按一次检测';
+            ZQ.reportState(status);
+        });
+
         // Returned so a caller (a test) can wait for the outcome; the DOM ignores the value.
         window.addEventListener('zq:relay-failed', () => ZQ.handleTransportFailure());
 
