@@ -40,6 +40,7 @@ function boot(options = {}) {
     const messages = [];
     const clickHandlers = [];
     let listener = null;
+    let storageListener = null;
 
     const store = new Map();
 
@@ -60,10 +61,10 @@ function boot(options = {}) {
         },
         storage: {
             local: {
-                get(keys, callback) { callback({}); }
+                get(keys, callback) { callback(options.stored || {}); }
             },
             onChanged: {
-                addListener() {}
+                addListener(fn) { storageListener = fn; }
             }
         }
     };
@@ -90,7 +91,7 @@ function boot(options = {}) {
         window: { __zqDetectInjected: false },
         document: {
             cookie: '',
-            body: { innerText: '' },
+            body: { innerText: options.bodyText || '' },
             documentElement: {},
             // detection.js probes for the captcha frame by id, and detect-button.js locates the detect button.
             // Without these the content scripts threw during boot, so no check below ever ran.
@@ -140,7 +141,17 @@ function boot(options = {}) {
             return { keepChannelOpen, response };
         },
         click(text) {
-            clickHandlers.forEach(h => h({ target: { textContent: text, className: '' } }));
+            const event = {
+                target: { textContent: text, className: '' },
+                defaultPrevented: false,
+                propagationStopped: false,
+                immediatePropagationStopped: false,
+                preventDefault() { this.defaultPrevented = true; },
+                stopPropagation() { this.propagationStopped = true; },
+                stopImmediatePropagation() { this.immediatePropagationStopped = true; }
+            };
+            clickHandlers.forEach(h => h(event));
+            return event;
         },
         clickTarget(target) {
             clickHandlers.forEach(h => h({ target }));
@@ -149,7 +160,11 @@ function boot(options = {}) {
             return messages
                 .filter(m => m && m.action === 'statusUpdate')
                 .map(m => m.payload && m.payload.status);
-        }
+        },
+        changeStorage(changes, area = 'local') {
+            if (typeof storageListener === 'function') storageListener(changes, area);
+        },
+        zq: sandbox.window.__zq
     };
 }
 
@@ -320,6 +335,76 @@ function boot(options = {}) {
         }
         if (!threw) ok('SVG click targets do not throw while checking class names');
         else fail('SVG click target caused a className.includes exception');
+    }
+
+
+    // 8. A page can report quota exhaustion before the socket-use counter reaches five.
+    //    The click guard must use addressSpent(), not only identitySpent(), and must stop the
+    //    site's handler before it can submit another request.
+    {
+        const env = boot({
+            bodyText: '上传 清空 今日次数已用完 赞/踩可获取奖励次数',
+            stored: { spentMode: 'manual', spentDelaySeconds: 2 }
+        });
+        const event = env.click('立即检测');
+
+        if (event.defaultPrevented && event.propagationStopped && event.immediatePropagationStopped &&
+            !env.messages.some(message => message.action === 'relayHealth')) {
+            ok('page quota blocks a click even before the local socket count reaches five');
+        } else {
+            fail('page quota did not block the click before submission');
+        }
+    }
+
+    // 9. The press mode must turn that blocked click into the explicit press-triggered rotation.
+    {
+        const env = boot({
+            bodyText: '今日次数已用完',
+            stored: { spentMode: 'press', spentDelaySeconds: 2 }
+        });
+        let rotated = false;
+        env.zq.forceRotate = () => { rotated = true; };
+        const event = env.click('立即检测');
+
+        if (event.defaultPrevented && rotated) {
+            ok('press mode rotates only after the spent click has been blocked');
+        } else {
+            fail('press mode did not route the blocked click to forceRotate');
+        }
+    }
+
+    // 10. Delay mode, including zero, must hand the blocked click to the same spent-address handler.
+    {
+        const env = boot({
+            bodyText: '今日次数已用完',
+            stored: { spentMode: 'delay', spentDelaySeconds: 0 }
+        });
+        const reasons = [];
+        env.zq.onAddressSpent = reason => reasons.push(reason);
+        const event = env.click('立即检测');
+
+        if (event.defaultPrevented && JSON.stringify(reasons) === JSON.stringify(['press'])) {
+            ok('zero-delay mode blocks the click and delegates to onAddressSpent');
+        } else {
+            fail(`zero-delay click path was not delegated correctly: ${JSON.stringify(reasons)}`);
+        }
+    }
+
+    // 11. A storage change that carries legacy 'immediate' and a stale wait must still resolve to zero.
+    {
+        const env = boot({
+            stored: { spentMode: 'delay', spentDelaySeconds: 5 }
+        });
+        env.changeStorage({
+            spentMode: { newValue: 'immediate' },
+            spentDelaySeconds: { newValue: 30 }
+        });
+
+        if (env.zq.state.spentMode === 'delay' && env.zq.state.spentDelaySeconds === 0) {
+            ok('a legacy immediate storage change keeps its zero-second meaning');
+        } else {
+            fail(`legacy immediate storage change resolved to ${env.zq.state.spentMode}/${env.zq.state.spentDelaySeconds}`);
+        }
     }
 
     // Give any Promise rejected by the final synchronous check a turn to surface before

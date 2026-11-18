@@ -219,21 +219,19 @@
             chrome.storage.onChanged.addListener((changes, area) => {
                 if (area !== 'local') return;
 
-                // The spent-mode choice takes effect without a reload: the panel is where it is set,
-                // and a setting that only applies to the next page would look broken.
-                if (changes.spentMode) {
+                // Resolve both fields together. A storage change can deliver the mode and wait in one
+                // callback; resolving them separately lets a legacy 'immediate' mode lose its required
+                // zero wait when the same event also carries a stale delay value.
+                if (changes.spentMode || changes.spentDelaySeconds) {
                     const spent = ZQ.resolveSpentSettings({
-                        spentMode: changes.spentMode.newValue,
-                        spentDelaySeconds: ZQ.state.spentDelaySeconds
+                        spentMode: changes.spentMode
+                            ? changes.spentMode.newValue
+                            : ZQ.state.spentMode,
+                        spentDelaySeconds: changes.spentDelaySeconds
+                            ? changes.spentDelaySeconds.newValue
+                            : ZQ.state.spentDelaySeconds
                     });
                     ZQ.state.spentMode = spent.spentMode;
-                }
-
-                if (changes.spentDelaySeconds) {
-                    const spent = ZQ.resolveSpentSettings({
-                        spentMode: ZQ.state.spentMode,
-                        spentDelaySeconds: changes.spentDelaySeconds.newValue
-                    });
                     ZQ.state.spentDelaySeconds = spent.spentDelaySeconds;
                 }
             });
