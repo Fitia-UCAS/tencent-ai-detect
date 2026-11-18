@@ -31,3 +31,5 @@ tmp-refactor/
 
 # Upstream page sources kept for protocol analysis (third-party code, not ours to version).
 .zq-upstream/
+
+tencent-ai-detect.md
