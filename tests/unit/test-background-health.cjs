@@ -150,10 +150,9 @@ async function tick() {
     );
 
     const statusChannel = messageListener({ action: 'statusUpdate', payload: { status: 'idle' } }, {}, () => {});
-    const resetUsageChannel = messageListener({ action: 'resetUsage' }, {}, () => {});
     check(
-        statusChannel === false && resetUsageChannel === false,
-        'all other synchronous background actions close their message channels'
+        statusChannel === false,
+        'statusUpdate responds synchronously and closes its message channel'
     );
 
     // The relay always runs now. The switch is gone because turning it off never produced a working

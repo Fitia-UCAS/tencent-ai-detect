@@ -104,7 +104,7 @@ check('one identity is kept for the whole load', () => {
 });
 
 check('an identity from an earlier load is NOT reused', () => {
-    // Measured: an address serves four handshakes and is refused from the fifth onwards, for good.
+    // Measured: the server allows five handshakes per address and refuses the sixth onwards, for good.
     // Restoring the stored value would burn it and break every later load.
     const block = identity.slice(identity.indexOf('ZQ.ensureIdentity'), identity.indexOf('ZQ.identityUses'));
     assert.ok(!block.includes('getItem(ZQ.IDENTITY_KEY)'), 'the stored value must not be the source');

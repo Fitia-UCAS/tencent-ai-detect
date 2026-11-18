@@ -28,7 +28,7 @@ export const KEYS = Object.freeze({
     backgroundLog: 'zqBackgroundLog'
 });
 
-// Seeded on install only when absent, so an update never resets a user's switches.
+// Seeded on install only when absent, so an update preserves existing counters and reset history.
 export const DEFAULTS = Object.freeze({
     resetCount: 0,
     ipUsageCount: 0,

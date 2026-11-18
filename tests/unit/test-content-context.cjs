@@ -10,10 +10,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// The content layer is four classic scripts loaded in order by the manifest; the test loads the
-// same list into one sandbox so the shared namespace is exercised exactly as in the browser.
+// The content layer is seven classic scripts loaded in manifest order; the test loads the same
+// list into one sandbox so the shared namespace is exercised exactly as in the browser.
 const CONTENT_DIR = path.join(__dirname, '..', '..', 'src', 'content');
-const SOURCES = ['core.js', 'identity.js', 'detection.js', 'engine.js', 'index.js'].map(name => ({
+const SOURCES = ['core.js', 'identity.js', 'detection.js', 'snapshot.js', 'engine.js', 'auto.js', 'index.js'].map(name => ({
     name: 'src/content/' + name,
     text: fs.readFileSync(path.join(CONTENT_DIR, name), 'utf8')
 }));
@@ -92,11 +92,12 @@ function boot(options = {}) {
             cookie: '',
             body: { innerText: '' },
             documentElement: {},
-            // detection.js probes for the captcha frame by id, auto.js queries the editor and the buttons.
+            // detection.js probes for the captcha frame by id, and auto.js locates the detect button.
             // Without these the content scripts threw during boot, so no check below ever ran.
             getElementById: () => null,
             querySelector: () => null,
             querySelectorAll: () => [],
+            createTreeWalker: () => ({ currentNode: null, nextNode: () => null }),
             addEventListener(type, handler) {
                 if (type === 'click') clickHandlers.push(handler);
             }
@@ -111,6 +112,7 @@ function boot(options = {}) {
             setItem: () => {},
             removeItem: () => {}
         },
+        NodeFilter: { SHOW_ELEMENT: 1 },
         MutationObserver: class {
             observe() {}
             disconnect() {}
@@ -290,13 +292,13 @@ function boot(options = {}) {
     // 6. Message listeners must close channels for synchronous and unknown actions.
     {
         const env = boot();
-        const known = env.fire('toggle');
+        const known = env.fire('getStatus');
         const unknown = env.fire('not-a-real-action');
 
-        if (known.keepChannelOpen === false && known.response?.status === 'success') {
-            ok('synchronous actions respond and close their message channel');
+        if (known.keepChannelOpen === false && known.response?.status === 'ok') {
+            ok('getStatus responds synchronously and closes its message channel');
         } else {
-            fail(`synchronous action left an open channel or missed its response: ${JSON.stringify(known)}`);
+            fail(`getStatus left an open channel or missed its response: ${JSON.stringify(known)}`);
         }
 
         if (unknown.keepChannelOpen === false && unknown.response === undefined) {

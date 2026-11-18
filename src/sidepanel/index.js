@@ -110,11 +110,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     chrome.storage.local.get(['spentMode', 'spentDelaySeconds'], state => {
-        const seconds = clampWait(state.spentDelaySeconds);
+        const legacyImmediate = state.spentMode === 'immediate';
+        const seconds = legacyImmediate ? 0 : clampWait(state.spentDelaySeconds);
 
-        // A profile that still carries the removed 'immediate' mode meant a zero wait.
-        renderSpentMode(state.spentMode === 'immediate' ? 'delay' : (state.spentMode || 'manual'));
+        // The removed mode meant a zero wait. Normalize both stored fields together so the panel
+        // and content script resolve the same setting even when the old profile had a stale delay.
+        renderSpentMode(legacyImmediate ? 'delay' : (state.spentMode || 'manual'));
         renderSpentDelay(seconds);
+
+        if (legacyImmediate) {
+            chrome.storage.local.set({ spentMode: 'delay', spentDelaySeconds: 0 });
+        }
     });
 
     // Clicking a header chooses the card. On the wait card the same click also opens it, because

@@ -276,10 +276,14 @@ const marked = app => app.spentCards.filter(card => card.dataset.selected === 't
 // 4d. The removed mode is still read, so an existing profile keeps meaning what it meant.
 {
     const app = build({ stored: { spentMode: 'immediate' } });
-    check('a stored "immediate" is shown as the wait card, not as nothing chosen', () => {
+    check('a stored "immediate" becomes a zero-second delay in the panel and storage', () => {
         const selected = marked(app);
         assert.equal(selected.length, 1);
         assert.equal(selected[0].dataset.mode, 'delay');
+        assert.equal(app.elements['spent-delay'].value, '0');
+        assert.equal(app.elements['spent-delay-hint'].textContent, 'Swaps at once');
+        assert.ok(app.writes.some(write =>
+            write.spentMode === 'delay' && write.spentDelaySeconds === 0));
     });
 
     const html = fs.readFileSync(

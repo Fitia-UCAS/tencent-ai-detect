@@ -55,12 +55,6 @@ export function createMessageRouter({ chrome, keys, keepAlive, health, usage, id
             return false;
         },
 
-        resetUsage(request, sender, respond) {
-            usage.resetUsage();
-            respond({ status: 'success' });
-            return false;
-        },
-
         // The address this page load chose. The content script publishes it before sending
         // anything, so the header rule exists by the time the captcha is requested.
         //

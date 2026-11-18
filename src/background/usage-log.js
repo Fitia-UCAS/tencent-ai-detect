@@ -5,7 +5,7 @@
 
 export function createUsageLog({ chrome, keys, defaults, historyLimit, usageWindowMs, usageCap, now = () => Date.now() }) {
     // Write only the keys that are absent. onInstalled also fires on update, so writing every
-    // default would wipe the user's switches and reset the history on each version bump.
+    // default would reset the counters and history on each version bump.
     function seedDefaults(done = () => {}) {
         const wanted = Object.keys(defaults);
         chrome.storage.local.get(wanted, existing => {
@@ -66,13 +66,6 @@ export function createUsageLog({ chrome, keys, defaults, historyLimit, usageWind
         return true;
     }
 
-    function resetUsage() {
-        chrome.storage.local.set({
-            [keys.ipUsageCount]: 0,
-            [keys.lastResetTime]: now()
-        });
-    }
-
     function readStatus(callback) {
         chrome.storage.local.get(
             [keys.relayOnline, keys.ipUsageCount, keys.resetCount, keys.lastStatus, keys.hostError],
@@ -88,5 +81,5 @@ export function createUsageLog({ chrome, keys, defaults, historyLimit, usageWind
         );
     }
 
-    return { seedDefaults, logReset, incrementUsage, resetUsage, readStatus };
+    return { seedDefaults, logReset, incrementUsage, readStatus };
 }

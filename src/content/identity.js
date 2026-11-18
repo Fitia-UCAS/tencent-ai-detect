@@ -6,8 +6,8 @@
 // picks it and publishes it, the background puts it on the page's own request headers, and the shim
 // (src/shim/index.js) hands it to the socket through localStorage.
 //
-// Measured against the real server: an address serves four handshakes and is refused from the fifth
-// onwards, permanently, and the limit is per address rather than per prefix - an untouched
+// Measured against the real server: it allows five handshakes per address and refuses the sixth
+// onwards, permanently; the limit is per address rather than per prefix - an untouched
 // neighbour in the same /24 still works. Restoring a stored address across loads would therefore
 // burn it and leave the extension unable to detect anything at all, so each load mints a new one.
 

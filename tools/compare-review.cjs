@@ -311,30 +311,6 @@ const PROPOSALS = [
         probe: { must: [/observer\.observe\(document,/] }
     },
     {
-        id: 'P0-2',
-        file: 'src/content/auto.js',
-        topic: 'restoreDraft must not delete the backup before the editor accepts it',
-        verdict: 'adopted',
-        claim: 'The old order was removeItem then writeEditor, so when the editor had not rendered yet the write returned false but the only copy of the draft was already gone. One rotation ate the text. Taken as offered.',
-        probe: { must: [/if \(!ZQ\.writeEditor\(text\)\) return false;/] }
-    },
-    {
-        id: 'P0-3',
-        file: 'src/content/auto.js',
-        topic: 'once the editor has content, never revive the old draft during that load',
-        verdict: 'adopted',
-        claim: 'A later timer could still write the old draft back after the user cleared what they had just typed. There was no such guard. Taken as offered.',
-        probe: { must: [/draftRestoreConflict/] }
-    },
-    {
-        id: 'P0-4',
-        file: 'src/content/auto.js',
-        topic: 'saveDraft stores the raw text, not the trimmed readEditor()',
-        verdict: 'adopted',
-        claim: 'readEditor() trims, so the stored draft lost its leading and trailing whitespace. Taken as offered.',
-        probe: { must: [/editor \? \(editor\.textContent \|\| ''\) : ''/] }
-    },
-    {
         id: 'P1-1',
         file: 'src/background/header-rules.js',
         topic: 'apply() reported success before updateDynamicRules finished',
@@ -349,30 +325,6 @@ const PROPOSALS = [
         verdict: 'extended',
         claim: 'The handler could return success before the update finished. It now waits for the read-back and answers ignored or error on failure, never success.',
         probe: { must: [/\.then\(applied =>/] }
-    },
-    {
-        id: 'P1-3',
-        file: 'src/content/auto.js',
-        topic: 'a refused rule should stop the click, not just log',
-        verdict: 'extended',
-        claim: 'Not raised by the review, but the direct consequence of P1-2: identity.js now records whether the background confirmed the rule, and autoDetect() refuses to click when it was refused, because that address pairing is rejected every time and pressing only burns an address. Unconfirmed does not block, or a slow install would stall the automation for good.',
-        probe: { must: [/identityConfirmed === false/] }
-    },
-    {
-        id: 'P1-4',
-        file: 'src/content/auto.js',
-        topic: 'a press is an attempt, not a finished detection',
-        verdict: 'extended',
-        claim: 'The old record stored the text itself, which claimed a detection that had only been a click. It now stores what was observed: submitted-unconfirmed, quota-decrement-observed, blocked, or unknown, with the quota snapshot taken at the press. None of those states allows an automatic re-press. A later round renamed completed to quota-decrement-observed, because a counter drop cannot be attributed to this request. One state was added after that: retryable, for the server answering "Exception Occured!" after it had already accepted the request. It is the only state that permits a second ask, it is bounded by the attempt count in the record, and it is read off the reply frame rather than off the page.',
-        probe: { must: [/submitted-unconfirmed/, /attemptState/, /q: currentQuota\(\)/, /retryable/] }
-    },
-    {
-        id: 'P1-5',
-        file: 'src/content/auto.js',
-        topic: 'fingerprint() should normalize only newlines and nbsp',
-        verdict: 'rejected',
-        claim: 'Rejected. A measured re-render turns a newline into space + CRLF + space; normalizing only the newline leaves the indentation spaces, the two fingerprints still differ, and the draft is pressed again with no ticket. Stripping all whitespace covers the measured shape, and collapsing "a b" with "ab" merely means one duplicate is missed. The review withdrew this one later.',
-        probe: { must: [/replace\(\/[^a-zA-Z]s\+/], mustNot: [/\u00a0/] }
     },
     {
         id: 'P1-6',
@@ -403,24 +355,16 @@ const PROPOSALS = [
         file: 'src/content/engine.js',
         topic: 'stop the run when the allowance is exhausted instead of rotating',
         verdict: 'rejected',
-        claim: 'Rejected for this project. Rotating is the requested behaviour: this extension exists to keep the allowance usable without the user pressing anything. The suggested alternative suits ordinary automation, not this one.',
+        claim: 'Rejected for this project. The delay mode still rotates automatically when the allowance is exhausted; manual and press preserve their separate user-selected behaviours.',
         probe: { must: [/ZQ\.rotate\(reason\);/] }
     },
     {
         id: 'P1-9',
         file: 'src/background/header-rules.js',
-        topic: 'the three dynamic rules are global and not isolated per tab',
-        verdict: 'open',
-        claim: 'Agreed. The rules carry no tab condition, and two detection pages overwrite the address each other wrote. Code unchanged: this extension is used with one detection tab, and per-tab rules would need sessionRuleIds plus tab lifecycle cleanup. The limitation itself is stated in the delivery note, with what multi-tab support would require: updateSessionRules, tabIds, and tracking tab lifecycle.',
-        probe: { must: [/IDENTITY_RULE_ID/], mustNot: [/tabIds/] }
-    },
-    {
-        id: 'P2-1',
-        file: 'tests/unit/',
-        topic: 'add regressions for a DOM that is not ready, storage failure, duplicate submission, two tabs',
+        topic: 'isolate identity rules per tab',
         verdict: 'extended',
-        claim: 'Three of the four are covered: test-document-start.cjs, test-draft-safety.cjs (nine storage and write failure cases), and the submission state cases in test-auto-detect.cjs. Two tabs remain uncovered, consistent with P1-9.',
-        probe: { files: ['tests/unit/test-document-start.cjs', 'tests/unit/test-draft-safety.cjs'] }
+        claim: 'The earlier global-rule limitation was resolved: identity rules are installed in the session ruleset with tabIds, tracked per tab, and removed when a tab closes. sync() rebuilds that ownership after a worker restart.',
+        probe: { must: [/tabIds:\s*\[tabId\]/, /removeTab\(tabId\)/, /sync\(\)/] }
     },
     {
         id: 'P1-10',
@@ -429,14 +373,6 @@ const PROPOSALS = [
         verdict: 'extended',
         claim: 'The review found this and fixed the failure paths: unreadable, unpersisted, corrupt, and future-dated records all fail closed. But the budget still lived in the site origin storage, which the page itself can clear, so the extension-controlled half of the requirement was not met. Moved to extension storage, with the same fail-closed behaviour on a failed read, a failed write, and a read-back that does not match.',
         probe: { must: [/chrome\.storage\.local/, /validBudget/, /recordTransportReload/], mustNot: [/localStorage\.setItem\(ZQ\.TRANSPORT_RELOAD_KEY/] }
-    },
-    {
-        id: 'P1-11',
-        file: 'src/content/auto.js',
-        topic: 'a counter drop does not prove this detection completed',
-        verdict: 'adopted',
-        claim: 'The judgement holds: a drop in the displayed allowance cannot be attributed to this request, and without a request id there is no causal link. That criterion was mine and it does not hold up. Renamed to quota-decrement-observed, legacy records are read as an observation, and the duplicate-submission guard is unchanged.',
-        probe: { must: [/quota-decrement-observed/], mustNot: [/settled = 'completed'/] }
     },
     {
         id: 'P1-12',

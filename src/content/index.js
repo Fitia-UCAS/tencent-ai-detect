@@ -176,10 +176,7 @@
     function registerMessages() {
         try {
             chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-                if (request.action === 'toggle') {
-                    ZQ.state.enabled = request.enabled;
-                    sendResponse({ status: 'success' });
-                } else if (request.action === 'getStatus') {
+                if (request.action === 'getStatus') {
                     sendResponse(ZQ.currentState(ZQ.pageState()));
                 } else if (request.action === 'rotateNow') {
                     // A press that cannot be served is the one case where swapping the address is

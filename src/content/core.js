@@ -1,10 +1,10 @@
 // Shared runtime for the content script: state, context guard, messaging.
 //
-// Content scripts cannot use ES modules without a bundler, so the content layer is four classic
+// Content scripts cannot use ES modules without a bundler, so the content layer is seven classic
 // scripts loaded in order by the manifest. They share one namespace object, which makes the
 // coupling explicit instead of scattering it across file-scope variables.
 //
-// Load order: core -> detection -> engine -> index.
+// Load order: core -> identity -> detection -> snapshot -> engine -> auto -> index.
 
 (function () {
     'use strict';

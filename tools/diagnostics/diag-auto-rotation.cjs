@@ -59,6 +59,13 @@ async function waitForTarget(match, timeoutMs = 25000) {
         const panelConn = await cdp(panelTarget.webSocketDebuggerUrl);
         await sleep(1200);
 
+        // A fresh profile defaults to manual; this diagnostic is specifically checking automatic
+        // rotation, so opt into the delay mode before the content script reads its settings.
+        await panelConn.send('Runtime.evaluate', {
+            expression: "new Promise(resolve => chrome.storage.local.set({ spentMode: 'delay' }, resolve))",
+            awaitPromise: true
+        });
+
         // Open the detection page from the panel so the tab belongs to the same window.
         await panelConn.send('Runtime.evaluate', {
             expression: `chrome.tabs.create({ url: ${JSON.stringify(DETECT_URL)}, active: true })`,

@@ -231,15 +231,6 @@
         const manual = !!(options && options.manual);
         if (!ZQ.isEnabled() || ZQ.state.rotating) return;
 
-        // Auto refresh is the switch for every reload this page performs, not only for the automatic
-        // detections: with it off nothing here reloads the page at all, and the reload becomes the
-        // user's own decision. The state is reported so the panel says why nothing moved, instead of
-        // looking as though the rotation quietly failed.
-        if (!ZQ.canAutoAct()) {
-            ZQ.reportState(ZQ.currentState('rotation-suppressed'));
-            return;
-        }
-
         // A challenge on screen means the page is waiting on the user, not on a new address.
         // Rotating now would reload mid-challenge and discard their work.
         if (ZQ.observeChallenge().open) {
@@ -736,8 +727,8 @@
                 body: data
             });
 
-            // The one reply this module acts on. Every other frame is evidence for the trail and for
-            // the page's own rendering.
+            // Transient failures are recorded for the trail only; they do not trigger a re-ask.
+            // The page remains responsible for rendering the server reply.
             const transient = ZQ.readTransientFailure(data);
             if (transient) ZQ.trace('server-transient', { msg: transient, state: ZQ.pageState() }, true);
         });

@@ -24,8 +24,8 @@
     const IDENTITY_KEY = 'zqXff';
     const IDENTITY_ATTR = 'data-zq-xff';
 
-    // How many handshakes this address has already performed. An address serves a measured four, so
-    // this count is what tells the content script when to move the page onto a fresh one. Counting
+    // How many handshakes this address has already performed. The server allows five per address, so
+    // this count tells the content script when to move the page onto a fresh one. Counting
     // sockets is exact; counting detection clicks is not, since one load reuses a single socket.
     const USE_COUNT_KEY = 'zqXffUses';
     const USE_COUNT_ATTR = 'data-zq-xff-uses';
@@ -63,7 +63,7 @@
 
     // The counter is kept here for the life of the load and mirrored out, rather than re-read each
     // time: the site clears sessionStorage on load, and a count that silently restarts would let the
-    // fifth handshake go out on a spent address, which no rotation can undo.
+    // sixth handshake go out on a spent address, which no rotation can undo.
     let uses = null;
 
     function countUse() {
