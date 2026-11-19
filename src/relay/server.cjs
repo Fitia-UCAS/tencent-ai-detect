@@ -415,7 +415,15 @@ const server = http.createServer((req, res) => {
         });
         // No PID, upstream hostname, or usage statistics on the unauthenticated
         // endpoint. Test tools must identify local processes through the OS.
-        res.end(JSON.stringify({ ok: true, service: HEALTH_SERVICE }));
+        //
+        // The outbound path is the exception, because it is the one fact the worker cannot derive on
+        // its own: whether a detection was refused with the proxy on or off was unanswerable from
+        // every log this project keeps. It is a local proxy address or the word "direct".
+        res.end(JSON.stringify({
+            ok: true,
+            service: HEALTH_SERVICE,
+            outbound: describeProxy(outbound.current())
+        }));
         return;
     }
 

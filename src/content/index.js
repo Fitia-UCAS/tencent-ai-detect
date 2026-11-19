@@ -52,6 +52,48 @@
         });
     }
 
+    // A blocked press must say why. Leaving the button silent is indistinguishable from the button
+    // being broken, which is the same defect the ticker-style notices had: the state is right and the
+    // person pressing cannot tell. Drawn with inline styles because this has to render over the site's
+    // own CSS and there is no stylesheet of our own on this page.
+    const NOTICE_ID = 'zq-press-notice';
+    let noticeTimer = null;
+
+    function showPressNotice(text) {
+        try {
+            const host = document.body || document.documentElement;
+            if (!host) return;
+
+            let notice = document.getElementById(NOTICE_ID);
+            if (!notice) {
+                notice = document.createElement('div');
+                notice.id = NOTICE_ID;
+                notice.style.cssText = [
+                    'position:fixed', 'left:50%', 'transform:translateX(-50%)', 'bottom:88px',
+                    'z-index:2147483647', 'max-width:min(520px,86vw)', 'padding:10px 16px',
+                    'border-radius:10px', 'background:rgba(31,36,48,.96)', 'color:#e8eaed',
+                    'font:13px/1.55 system-ui,sans-serif', 'text-align:center',
+                    'box-shadow:0 6px 22px rgba(0,0,0,.38)', 'pointer-events:none'
+                ].join(';');
+                host.appendChild(notice);
+            }
+
+            notice.textContent = text;
+            notice.hidden = false;
+
+            if (noticeTimer) clearTimeout(noticeTimer);
+            noticeTimer = setTimeout(() => {
+                try {
+                    if (notice) notice.hidden = true;
+                } catch (e) {
+                    // The page may have replaced the node; nothing to restore in that case.
+                }
+            }, 3200);
+        } catch (e) {
+            // A courtesy notice must never be able to break the press it explains.
+        }
+    }
+
     // Usage is counted from clicks on the site's own detect controls.
     //
     // The listener is registered in the capture phase, and that is what makes the spent check work:
@@ -129,9 +171,9 @@
                 return;
             }
 
-            // A withheld no-challenge ticket is a user retry state, not a refusal. The next press is
-            // the recovery action that asks the site for another ticket, so it must be allowed through
-            // even if the old result panel still says "Invalid request". Consume the marker once;
+            // A short no-challenge ticket is passed on to the server rather than withheld. If the
+            // page still shows its refusal, allow one user press to request a fresh ticket instead
+            // of treating that old result as a new stale refusal. Consume the marker once;
             // address-spent and identity-unconfirmed guards above still take precedence.
             const quickPass = ZQ.state.quickPass;
             if (quickPass) {
@@ -150,10 +192,45 @@
             // handshake and returning the same word. The press is stopped and the page is offered a
             // fresh start instead, which is the one action that can change the outcome.
             //
-            // Only the ambiguous state is caught here. 'captcha' is left alone: the challenge is the
-            // user's to solve and the page handles the press, and a solved challenge sometimes clears
-            // without the panel ever going ambiguous.
-            if (ZQ.pageState() === 'ambiguous' && !quickPass) {
+            // A press while the page is asking for a challenge cannot produce a usable ticket.
+            //
+            // The ticket the page holds is what the server judges, and only a solved challenge makes
+            // it usable. So a press made while the site is waiting on a challenge, or has just refused
+            // one, spends a handshake and comes back with `code 21 "diff"` - which the page renders as
+            // "Invalid request". Measured across the whole trail: of 10 presses made while the page
+            // said `captcha`, 8 were answered `code 21` and 1 produced no ticket at all.
+            //
+            // The condition is the state word alone, and that is the correction this guard needed. It
+            // used to also require the widget to be inside the viewport, and that requirement was the
+            // defect: the site hides the challenge by parking it at a negative offset, and it does so
+            // again while swapping in a replacement after a failed attempt - so exactly when a
+            // challenge was live and being redrawn, the geometry said "no challenge" and the press
+            // went through. Measured: page state `captcha` at 13:47:41.352, press at 13:47:42.270,
+            // challenge node at y -9999 mid-swap, and the press was allowed.
+            //
+            // `captchaOpen()` is still recorded on the trail, because geometry is what explains the
+            // swap; it is just not what decides this.
+            const state = ZQ.pageState();
+
+            if (state === 'captcha') {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+
+                ZQ.trace('press-blocked', {
+                    reason: 'challenge-pending',
+                    state,
+                    challengeOpen: ZQ.captchaOpen(),
+                    uses: ZQ.identityUses()
+                });
+
+                ZQ.state.challengeBlockedAt = Date.now();
+                showPressNotice(
+                    '请先完成人机验证再检测；若验证码正在刷新，稍等一两秒它就回来。');
+                return;
+            }
+
+            if (state === 'ambiguous' && !quickPass) {
                 event.preventDefault();
                 event.stopPropagation();
                 event.stopImmediatePropagation();

@@ -347,30 +347,41 @@ function boot(options = {}) {
     }
 
 
-    // 8. A withheld no-challenge ticket is a retry prompt, not a click guard. Even if the old
-    // refusal panel is still visible, the next user press must reach the site's handler.
+    // 8. A short no-challenge ticket is recorded internally and grants one retry press, but it
+    //    must not create a panel status or carry a prompt bit into statusUpdate.
     {
         const env = boot({ bodyText: 'Invalid request' });
-        env.dispatch('zq:quick-pass', 170);
+        const frame = JSON.stringify({ ticket: 'x'.repeat(170) });
+        const statusCountBefore = env.messages.filter(message => message.action === 'statusUpdate').length;
 
-        const status = env.messages
-            .filter(message => message.action === 'statusUpdate')
-            .map(message => message.payload)
-            .find(payload => payload && payload.status === 'captcha-incomplete');
+        env.dispatch('zq:quick-pass', { ticketLength: 170, frame });
+
+        const statusCountAfter = env.messages.filter(message => message.action === 'statusUpdate').length;
+        const quickPassTrace = env.messages.find(message =>
+            message.action === 'trace' && message.payload && message.payload.name === 'captcha-quick-pass');
+        env.zq.reportState(env.zq.currentState('quick-pass-test'));
+        const statusUpdates = env.messages.filter(message => message.action === 'statusUpdate');
+        const statusPayload = statusUpdates[statusUpdates.length - 1].payload;
 
         const event = env.click('立即检测');
+        const retryTrace = env.messages.find(message =>
+            message.action === 'trace' && message.payload && message.payload.name === 'quick-pass-retry');
 
-        if (status && status.message === '验证码未完成，请再按一次检测' &&
+        if (statusCountAfter === statusCountBefore &&
+            quickPassTrace && quickPassTrace.payload.detail.ticketLength === 170 &&
+            quickPassTrace.payload.detail.frame === frame &&
+            statusPayload && !Object.prototype.hasOwnProperty.call(statusPayload, 'quickPassPending') &&
+            !Object.prototype.hasOwnProperty.call(env.zq.state, 'quickPassPrompt') &&
             event.defaultPrevented === false &&
             event.propagationStopped === false &&
             event.immediatePropagationStopped === false &&
             env.messages.some(message => message.action === 'usageIncrement') &&
-            !env.messages.some(message => message.action === 'relayHealth' || message.action === 'logReset') &&
-            env.reloads.length === 0 &&
-            env.zq.state.quickPass === null) {
-            ok('quick-pass state reports the retry prompt and leaves the next detect click unblocked');
+            retryTrace && retryTrace.payload.detail.ticketLength === 170 &&
+            env.zq.state.quickPass === null &&
+            env.reloads.length === 0) {
+            ok('quick-pass is trail-only and its one-shot permission lets the next detect click through stale-refusal');
         } else {
-            fail('quick-pass state blocked the recovery click or did not report the retry prompt');
+            fail('quick-pass did not preserve the retry path without publishing prompt state');
         }
     }
 

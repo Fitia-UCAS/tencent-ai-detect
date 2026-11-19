@@ -13,6 +13,7 @@ const path = require('node:path');
 
 const EXT_ID = 'kdjgfockdecdbadmpbjgflmiffdiffhp';
 const { edgeStoreDir } = require('../machine.cjs');
+const { readTables } = require('./leveldb-table.cjs');
 const STORE = edgeStoreDir(EXT_ID);
 
 // A record header is crc32(4) | length(2) | type(1). Type 1 is a whole value; a value too large for
@@ -186,9 +187,14 @@ if (fs.existsSync(STORE)) {
         values.push(...readLogValues(path.join(STORE, name)));
     }
 }
-const payloads = readStorePayloads(STORE);
 
-if (values.length === 0 && payloads.length === 0) {
+// The tables, read properly. The byte scan below cannot decode a compressed block, so on a store that
+// has been compacted it found the key and no value - which is what made this tool print "none parsed"
+// while the runs that needed explaining sat in a table. Oldest table first, so the newest trail is
+// whichever one is read last.
+const tables = readTables(STORE);
+
+if (values.length === 0 && tables.length === 0) {
     console.log('No trail in storage yet.');
     console.log('The trail is written by the content script, so it appears after a page load runs the');
     console.log('current build. Reload the extension and open the detection page once.');
@@ -196,13 +202,20 @@ if (values.length === 0 && payloads.length === 0) {
 }
 
 // Complete values first, in the order they were written, so the last one that parses is the newest
-// trail. The table scan is the fallback: a compressed block gives a prefix at best, which is only
-// worth printing when nothing else parses.
+// trail. Then the tables, then the byte scan as a last resort - the scan gives a prefix at best, which
+// is only worth printing when nothing else parses.
 let newest = null;
 for (const text of values) {
     const parsed = extractTrails(text.toString('utf8'));
     if (parsed) newest = parsed;
 }
+for (const entry of tables) {
+    if (!entry.key.startsWith('zqTrail')) continue;
+    const parsed = extractTrails(entry.value.toString('utf8'));
+    if (parsed) newest = parsed;
+}
+
+const payloads = readStorePayloads(STORE);
 for (const text of payloads) {
     const parsed = extractTrails(text);
     if (parsed) newest = parsed;
@@ -245,10 +258,18 @@ for (const [tabId, run] of runs) {
             ? ''
             : ' ' + JSON.stringify(event.detail);
 
+        // The outbound path the relay was leaving by, and how stale that reading was. Printed on the
+        // line it belongs to, because the question - was the proxy on when this ticket was refused -
+        // is about that moment and the answer is not visible anywhere else.
+        const path = event.outbound
+            ? ' [' + event.outbound + (event.outboundAgeMs === null ? '' : ' ' +
+                Math.round(event.outboundAgeMs / 1000) + 's ago') + ']'
+            : '';
+
         console.log(
             localClock(event.t).padEnd(13) +
             String(gap).padStart(9) + '  ' +
-            String(event.name).padEnd(22) + detail);
+            String(event.name).padEnd(22) + detail + path);
 
         // The page picture is what the trail cannot say on its own: the same wording means a refusal
         // or a stale view depending on where in the DOM it sits and whether it is visible.

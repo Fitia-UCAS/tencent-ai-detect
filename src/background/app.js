@@ -29,8 +29,16 @@ export function createBackground({ chrome, fetchImpl = fetch, log = () => {} }) 
     const relayState = createRelayState({ chrome, state });
 
     const host = createNativeHost({ chrome, hostName: NATIVE_HOST_NAME, state, relayState, log });
+
+    // The outbound path goes to the log ring and nowhere else. It is a diagnostic, and the panel is
+    // the user's controls: a value there that nobody acts on is noise that makes the two things that
+    // do matter - a missing host and the chosen mode - harder to find.
+    function publishOutbound(path, before) {
+        log(`outbound ${before} -> ${path}`);
+    }
+
     const health = createRelayHealth({
-        fetchImpl, url: RELAY_HEALTH_URL, relayState, timeoutMs: HEALTH_TIMEOUT_MS
+        fetchImpl, url: RELAY_HEALTH_URL, relayState, timeoutMs: HEALTH_TIMEOUT_MS, publishOutbound
     });
     const keepAlive = createKeepAlive({ chrome, health, host, alarmName: KEEPALIVE_ALARM });
     const usage = createUsageLog({

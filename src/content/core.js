@@ -30,6 +30,8 @@
         spentDelaySeconds: 2,
         rotating: false,
         retryTimer: null,
+        // A short no-challenge ticket grants one user press through the stale-refusal guard.
+        quickPass: null,
         contextAlive: true,
         // Navigation timing origin for this document, in ms. The gap between a page becoming ready and
         // the press is a real variable: the one successful run on record pressed 6167ms after load,

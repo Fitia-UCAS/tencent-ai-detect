@@ -222,7 +222,10 @@
     };
 
     ZQ.reportState = function reportState(state) {
-        ZQ.send({ action: 'statusUpdate', payload: state });
+        ZQ.send({
+            action: 'statusUpdate',
+            payload: state
+        });
     };
 
     // Rotates the address. `reason` is what the log calls it; `options.manual` marks a request from
@@ -278,6 +281,9 @@
         }
 
         ZQ.state.rotating = true;
+        if (ZQ.state.quickPass) {
+            ZQ.state.quickPass = null;
+        }
 
         // The relay is the only transport: without it there is no way to change the client
         // address, and the only other API that can is the debugger, which would put Chromium's
@@ -730,24 +736,21 @@
     // The hook is optional: a sandbox without DOM event support (the unit tests build one) keeps
     // the rest of the module working, and the shim's announcement is simply unheard there.
     if (typeof window.addEventListener === 'function') {
-        // The shim withholds a no-challenge ticket before it can reach the server. That is not a
-        // server refusal and it is not an address-spent condition: the user simply presses detect
-        // again so the site can mint another ticket. Keep that recovery on this page and on this
-        // address; do not rotate, reload, retry automatically, or touch the spent-address setting.
+        // A short no-challenge ticket is sent to the server, but still grants one user press through
+        // the stale-refusal guard if the page is showing an older refusal. Keep that retry on this
+        // page and address; do not rotate, reload, retry automatically, or touch spent-address mode.
         window.addEventListener('zq:quick-pass', event => {
-            const ticketLength = Number(event && event.detail);
+            const detail = event && event.detail;
+            const ticketLength = Number(detail && detail.ticketLength);
             if (!Number.isInteger(ticketLength) || ticketLength <= 0) return;
 
             ZQ.state.quickPass = { ticketLength, at: Date.now() };
 
             ZQ.trace('captcha-quick-pass', {
                 ticketLength,
+                frame: typeof detail.frame === 'string' ? detail.frame : '',
                 state: ZQ.pageState()
             }, true);
-
-            const status = ZQ.currentState('captcha-incomplete');
-            status.message = '验证码未完成，请再按一次检测';
-            ZQ.reportState(status);
         });
 
         // Returned so a caller (a test) can wait for the outcome; the DOM ignores the value.

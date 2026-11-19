@@ -93,10 +93,19 @@ export function createMessageRouter({ chrome, keys, keepAlive, health, usage, id
 
         // Appends one step of this tab's load to its trail. Fire-and-forget on purpose: the page has
         // already moved on by the time this arrives, so waiting for an answer would only delay it.
+        //
+        // Each entry is stamped with the outbound path the relay last reported and the age of that
+        // reading. The page cannot know this - a content script has no route to the system proxy
+        // switch - and without it a refusal during a proxy session and one during a direct session
+        // read identically, which is what made "is this the proxy or not" unanswerable.
         trace(request, sender, respond) {
             const payload = request && request.payload ? request.payload : {};
+            const reading = typeof health.outbound === 'function' ? health.outbound() : null;
 
-            trail.add(tabIdOf(sender), payload.name, payload.detail, payload.page);
+            trail.add(tabIdOf(sender), payload.name, payload.detail, payload.page, {
+                outbound: reading ? reading.path : null,
+                outboundAgeMs: reading && reading.at ? Date.now() - reading.at : null
+            });
             respond({ status: 'success' });
             return false;
         }

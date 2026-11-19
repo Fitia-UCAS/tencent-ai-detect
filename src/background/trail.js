@@ -58,7 +58,13 @@ export function createTrail({ chrome, key = 'zqTrail' }) {
     // Records one step. `name` is short and stable; `detail` is whatever helps explain it. The gap
     // from the previous event is stored rather than recomputed, because that interval is the thing
     // that distinguishes "the guard waited" from "the guard never ran".
-    function add(tabId, name, detail, page) {
+    //
+    // `stamp` is the outbound path at the moment of the event plus how old that reading was. It is
+    // stored on every entry rather than once per run: the question a refusal raises - was the proxy
+    // on at that moment - is about the moment, and a proxy client is a toggle the user flips while a
+    // page stays open. The reading can be older than the event; recording its age is what keeps an
+    // old value from being read as the state of that instant.
+    function add(tabId, name, detail, page, stamp = null) {
         const run = runFor(tabId);
         const last = run.events[run.events.length - 1];
         const entry = {
@@ -67,6 +73,11 @@ export function createTrail({ chrome, key = 'zqTrail' }) {
             name: String(name),
             detail: detail === undefined ? null : detail
         };
+
+        if (stamp && stamp.outbound) {
+            entry.outbound = String(stamp.outbound);
+            entry.outboundAgeMs = Number.isFinite(stamp.outboundAgeMs) ? stamp.outboundAgeMs : null;
+        }
 
         // The page picture is stored only when one was taken: repeating an identical snapshot on every
         // event would bury the transitions the trail exists to show.

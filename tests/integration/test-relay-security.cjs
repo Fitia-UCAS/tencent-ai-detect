@@ -64,7 +64,13 @@ async function startMockRelay(mockSource, idleMs = '0') {
         source,
         marker: target,
         replacement: mockSource,
-        env: { RELAY_PORT: String(port), RELAY_IDLE_MS: idleMs, RELAY_HEARTBEAT_TOKEN: token }
+        // RELAY_PROXY=off pins the outbound path: these checks assert the /health body, and the body
+        // now names the path. Without the override the answer would depend on whether the machine
+        // running the suite happens to have a proxy client switched on.
+        env: {
+            RELAY_PORT: String(port), RELAY_IDLE_MS: idleMs,
+            RELAY_HEARTBEAT_TOKEN: token, RELAY_PROXY: 'off'
+        }
     });
     let stderr = '';
     child.stderr.on('data', c => (stderr += String(c)));
@@ -142,9 +148,14 @@ async function stop(child) {
         const health = await httpCall(a.port, 'GET', '/health');
         assert.equal(health.status, 200);
         assert.equal(health.headers['access-control-allow-origin'], undefined);
+        // The body is still minimal and still carries no PID, hostname or usage figures. The outbound
+        // path is there because the worker cannot derive it: without it a refusal during a proxy
+        // session and one during a direct session were indistinguishable in every log this project
+        // keeps. It is a local proxy address or the word "direct", nothing about the caller.
         assert.deepEqual(JSON.parse(health.body), {
             ok: true,
-            service: 'zq-local-relay-v1'
+            service: 'zq-local-relay-v1',
+            outbound: 'direct'
         });
         check('GET health is read-only, minimal and without CORS wildcard');
 

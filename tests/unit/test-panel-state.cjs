@@ -118,7 +118,7 @@ function build({ stored = {}, relayOnline = true } = {}) {
     vm.runInContext(SOURCE, context, { filename: 'src/sidepanel/index.js' });
     domReady.dispatch();
 
-    return { elements, spentCards, writes };
+    return { elements, spentCards, writes, storageChanged };
 }
 
 const checks = [];
@@ -385,15 +385,22 @@ const marked = app => app.spentCards.filter(card => card.dataset.selected === 't
     });
 }
 
-// 8. A relay dropout is still announced, through the toast.
+// 8. A missing native host is still announced by the global host alert.
 {
-    const app = build({ relayOnline: false });
+    const app = build({ relayOnline: false, stored: { hostError: 'Native host is not registered' } });
     check('a relay dropout is reported by the host alert, not by a message strip', () => {
         // The host alert is the only place a failure is worth showing: it says the relay did not
         // start, which explains why every detection would fail. There is no separate notice to feed.
         const html = fs.readFileSync(
             path.join(__dirname, '..', '..', 'src', 'sidepanel', 'index.html'), 'utf8');
+        const panelScript = fs.readFileSync(
+            path.join(__dirname, '..', '..', 'src', 'sidepanel', 'index.js'), 'utf8');
         assert.match(html, /id="host-alert"/, 'the host alert must exist');
+        assert.equal(app.elements['host-alert'].hidden, false, 'the host alert must be visible when registration failed');
+        assert.equal(app.elements['host-alert-detail'].textContent, 'Native host is not registered');
+        assert.ok(!/captcha-alert/.test(html), 'the quick-pass alert must not exist in the panel');
+        assert.ok(!/captchaAlert|renderCaptchaAlert|readCaptchaStatus/.test(panelScript),
+            'the quick-pass alert must not be queried or rendered by the panel script');
         assert.ok(!/id="notice"/.test(html), 'a separate notice strip must not exist');
     });
 }

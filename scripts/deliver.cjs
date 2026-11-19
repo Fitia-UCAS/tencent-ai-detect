@@ -54,6 +54,9 @@ function makeSnapshot(target) {
         // diagnostic run, so shipping it in the snapshot only adds noise for the reviewer.
         '--exclude-dir', 'temp',
         '--exclude-file', '*.pem',
+        // Session exports and handoff notes are not source files and can contain conversation text.
+        '--exclude-file', 'tencent-ai-detect.md',
+        '--exclude-file', 'tencent-ai-detect-changes.md',
         '--force'
     ]);
 }

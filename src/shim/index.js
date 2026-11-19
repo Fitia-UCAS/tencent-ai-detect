@@ -14,8 +14,9 @@
     const RELAY_URL = 'ws://127.0.0.1:9420/ws';
     const PATTERN = 'ai_gen_txt_server';
 
-    // The site's no-challenge pass is consistently shorter than a solved ticket. It is checked only
-    // on the detection socket, so an unrelated WebSocket carrying a small `ticket` field is untouched.
+    // The site's no-challenge pass is consistently shorter than a solved ticket. This threshold is
+    // only a diagnostic/retry marker: both short and long tickets follow the normal send path. It is
+    // checked only on the detection socket, so unrelated WebSockets are untouched.
     const QUICK_PASS_MAX_TICKET_LENGTH = 200;
 
     // The page's identity for this load, published by src/content/identity.js. Passing it on the
@@ -69,6 +70,9 @@
     // time: the site clears sessionStorage on load, and a count that silently restarts would let the
     // sixth handshake go out on a spent address, which no rotation can undo.
     let uses = null;
+    // A clear event is meaningful only after this load has observed a short no-challenge ticket.
+    // It remains pending until a later full ticket has actually been sent.
+    let quickPassPending = false;
 
     function countUse() {
         if (uses === null) {
@@ -371,25 +375,28 @@
             // "a stale open handler sending into a connecting socket delivers every send".
             if (!this._sock) return;
 
-            // A no-challenge ticket is known to be unusable with this relay flow. Do not send it:
-            // the page can request another ticket by pressing detect again, on the same page and
-            // address. Parse only the detection socket's JSON frame; malformed or unrelated frames
-            // keep their native send path.
+            // Mark a no-challenge ticket for diagnostics and to allow one user retry through the
+            // stale-refusal guard. Do not intercept it: the server must receive the frame and return
+            // its own verdict so the page can complete its normal failure/unlock path. Parse only
+            // the detection socket's JSON frame; malformed or unrelated frames keep their send path.
+            let clearQuickPassAfterSend = false;
             if (this._relay && typeof data === 'string') {
                 try {
                     const frame = JSON.parse(data);
                     const ticket = frame && typeof frame.ticket === 'string' ? frame.ticket : null;
+                    const isShortTicket = !!ticket && ticket.length < QUICK_PASS_MAX_TICKET_LENGTH;
 
-                    if (ticket && ticket.length < QUICK_PASS_MAX_TICKET_LENGTH) {
+                    if (isShortTicket) {
+                        quickPassPending = true;
                         try {
                             window.dispatchEvent(new CustomEvent('zq:quick-pass', {
-                                detail: ticket.length
+                                detail: { ticketLength: ticket.length, frame: data }
                             }));
                         } catch (e) {
-                            // Reporting must not interfere with the decision not to send the ticket.
+                            // Reporting must not interfere with sending the ticket.
                         }
-                        return;
                     }
+                    clearQuickPassAfterSend = !!ticket && !isShortTicket && quickPassPending;
                 } catch (e) {
                     // Non-JSON frames and malformed JSON are left untouched.
                 }
@@ -408,6 +415,17 @@
             }
 
             this._sock.send(data);
+
+            // Clear only after a later full ticket has actually left the shim. A short ticket is
+            // still sent, but it cannot confirm recovery; if send() throws, the marker also remains.
+            if (clearQuickPassAfterSend) {
+                try {
+                    window.dispatchEvent(new CustomEvent('zq:quick-pass-cleared'));
+                    quickPassPending = false;
+                } catch (e) {
+                    // Keep the pending marker so a later usable ticket can retry the notification.
+                }
+            }
         }
 
         _flushPending(sock) {

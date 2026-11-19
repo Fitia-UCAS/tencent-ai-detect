@@ -62,4 +62,11 @@ for (const id of ['host-alert', 'host-alert-detail']) {
 }
 assert.ok(css.includes('.host-alert'), 'stylesheet must style the host alert');
 
+// A short no-challenge ticket is now sent to the server rather than withheld, and the panel carries
+// no captcha prompt at all, so nothing here may reintroduce a synthetic retry or an instruction to
+// press for the user. Asserting the absence keeps a future patch from bringing the prompt back.
+assert.ok(!html.includes('captcha-alert'), 'the panel must not carry a captcha prompt');
+assert.ok(!html.includes('captcha-retry'), 'the panel must not expose a synthetic retry button');
+assert.ok(!script.includes('retryDetection'), 'the panel must not send a synthetic retry message');
+
 console.log(`PASS: ${resolved.length} side panel references resolve, styles are external`);
