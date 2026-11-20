@@ -1,7 +1,7 @@
 {
   "$schema": "./schemas/package.schema.json",
   "name": "tencent-ai-detect",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "type": "module",
   "description": "Browser extension for Tencent AI Detect",
